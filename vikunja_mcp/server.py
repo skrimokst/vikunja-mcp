@@ -1,0 +1,175 @@
+"""FastMCP stdio server exposing Vikunja task tools. Write-only — no delete tool by design.
+
+Config comes from the environment (see ``config.py``); the API token is read from the process
+env only. TLS verification uses the machine's OS trust store (``truststore``), so an internal CA
+that is already installed on the machine just works — the server manages no cert material.
+"""
+
+from __future__ import annotations
+
+import truststore
+from mcp.server.fastmcp import FastMCP
+
+from .client import VikunjaClient, VikunjaError
+from .config import Config, config_issues, load_config
+
+INSTRUCTIONS = """Manage tasks in a Vikunja instance: list, get, add, update, complete, reopen.
+Write-only — there is NO delete tool, by design. Configuration comes from the environment
+(VIKUNJA_URL, VIKUNJA_API_TOKEN, and a default project via VIKUNJA_PROJECT_ID or VIKUNJA_PROJECT);
+tools accept an explicit project_id that overrides the default. If a tool reports the token or URL
+is missing, tell the operator to set VIKUNJA_API_TOKEN in the shell they launch Claude from and
+relaunch — it is never stored in config. Use check_connection first if unsure."""
+
+mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
+
+
+def _client(cfg: Config) -> VikunjaClient:
+    return VikunjaClient(cfg.base_url, cfg.token)
+
+
+def _require_ready(cfg: Config) -> None:
+    issues = config_issues(cfg)
+    if issues:
+        raise VikunjaError("not configured: " + " ".join(issues))
+
+
+def _fmt_task(t: dict) -> dict:
+    """Trim a raw Vikunja task to the fields worth returning (date-only due, label titles)."""
+    due = t.get("due_date") or ""
+    due = "" if (not due or str(due).startswith("0001")) else str(due)[:10]
+    return {
+        "id": t.get("id"),
+        "title": t.get("title"),
+        "done": bool(t.get("done")),
+        "priority": t.get("priority") or 0,
+        "due": due,
+        "labels": [lbl.get("title") for lbl in (t.get("labels") or [])],
+    }
+
+
+@mcp.tool()
+def check_connection() -> dict:
+    """Verify the server can reach Vikunja and read the configured project.
+
+    Returns {ready: true, ...} when a task READ succeeds, else {ready: false, issues: [...]}
+    with the specific fix (token/URL/project/scope). Run this first if anything seems off."""
+    cfg = load_config()
+    issues = config_issues(cfg)
+    if issues:
+        return {"ready": False, "issues": issues}
+    try:
+        with _client(cfg) as c:
+            info = c.probe(cfg.default_project)
+    except VikunjaError as e:
+        hint = ""
+        if e.status == 401:
+            hint = " (token invalid or expired — reset VIKUNJA_API_TOKEN and relaunch)"
+        elif e.status == 403:
+            hint = " (token lacks scope for this route; with a project id you do NOT need 'read all projects')"
+        return {"ready": False, "issues": [str(e) + hint]}
+    return {
+        "ready": True,
+        "url": cfg.base_url,
+        "project": info["project_id"],
+        "note": "task READ verified; WRITE scope (add/update/complete) is only exercised on an actual write.",
+    }
+
+
+@mcp.tool()
+def list_tasks(project_id: int | None = None, include_done: bool = False) -> list[dict]:
+    """List tasks in a Vikunja project (open only unless include_done=true).
+
+    Uses VIKUNJA_PROJECT_ID/VIKUNJA_PROJECT when project_id is omitted. Sorted open-first,
+    then priority (high first), then id."""
+    cfg = load_config()
+    _require_ready(cfg)
+    with _client(cfg) as c:
+        pid = c.resolve_project_id(project_id or cfg.default_project)
+        tasks = c.get_project_tasks(pid, include_done=include_done)
+    if not include_done:
+        tasks = [t for t in tasks if not t.get("done")]
+    tasks.sort(key=lambda t: (bool(t.get("done")), -(t.get("priority") or 0), t.get("id") or 0))
+    return [_fmt_task(t) for t in tasks]
+
+
+@mcp.tool()
+def get_task(task_id: int) -> dict:
+    """Get a single task by id, including its description (HTML)."""
+    cfg = load_config()
+    _require_ready(cfg)
+    with _client(cfg) as c:
+        t = c.get_task(task_id)
+    out = _fmt_task(t)
+    out["description"] = t.get("description") or ""
+    return out
+
+
+@mcp.tool()
+def add_task(
+    title: str,
+    project_id: int | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    due: str | None = None,
+    labels: list[str] | None = None,
+) -> dict:
+    """Create a task. priority 0..5; due is yyyy-MM-dd; description is markdown; labels are
+    created if missing then attached. Returns the created task."""
+    cfg = load_config()
+    _require_ready(cfg)
+    with _client(cfg) as c:
+        pid = c.resolve_project_id(project_id or cfg.default_project)
+        t = c.add_task(pid, title, description=description, priority=priority, due=due, labels=labels)
+    return _fmt_task(t)
+
+
+@mcp.tool()
+def update_task(
+    task_id: int,
+    title: str | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    due: str | None = None,
+    labels: list[str] | None = None,
+) -> dict:
+    """Update a task; only the fields you pass change (read-modify-write). Pass due="" to clear
+    the due date, description="" to clear the description. Returns the updated task."""
+    cfg = load_config()
+    _require_ready(cfg)
+    changed: dict = {}
+    if title is not None:
+        changed["title"] = title
+    if description is not None:
+        changed["description"] = description
+    if due is not None:
+        changed["due"] = due
+    with _client(cfg) as c:
+        t = c.update_task(task_id, priority=priority, labels=labels, **changed)
+    return _fmt_task(t)
+
+
+@mcp.tool()
+def complete_task(task_id: int) -> dict:
+    """Mark a task done. Returns the updated task."""
+    cfg = load_config()
+    _require_ready(cfg)
+    with _client(cfg) as c:
+        return _fmt_task(c.set_done(task_id, True))
+
+
+@mcp.tool()
+def reopen_task(task_id: int) -> dict:
+    """Reopen a completed task (mark not done). Returns the updated task."""
+    cfg = load_config()
+    _require_ready(cfg)
+    with _client(cfg) as c:
+        return _fmt_task(c.set_done(task_id, False))
+
+
+def main() -> None:
+    truststore.inject_into_ssl()  # verify TLS against the OS trust store (internal CA lives there)
+    mcp.run()  # stdio transport by default
+
+
+if __name__ == "__main__":
+    main()

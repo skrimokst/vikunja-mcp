@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vikunja": {
+      "command": "uv",
+      "args": ["run", "--directory", "/abs/path/to/vikunja-mcp", "vikunja-mcp"],
+      "env": {
+        "VIKUNJA_URL": "https://your-vikunja-host",
+        "VIKUNJA_PROJECT_ID": "7"
+      }
+    }
+  }
+}

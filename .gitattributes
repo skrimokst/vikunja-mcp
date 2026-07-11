@@ -1,0 +1,2 @@
+# Python stays LF (cross-platform; core.autocrlf would otherwise give CRLF).
+*.py text eol=lf
