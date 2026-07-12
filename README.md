@@ -92,3 +92,7 @@ project / 401 bad-token / 403 missing-scope). Then "list my open Vikunja tasks".
 
 Tasks are returned as structured JSON (id, title, done, priority, due, labels). Priority is
 `0..5`: `0`=Unset `1`=Low `2`=Medium `3`=High `4`=Urgent `5`=DO NOW.
+
+---
+
+This MCP server was built with [Claude Code](https://claude.com/claude-code).
