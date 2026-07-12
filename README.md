@@ -47,13 +47,16 @@ uv run pytest      # optional: run the client tests
 | Default project by name | `VIKUNJA_PROJECT` | convenience; its name→ID lookup needs 'read all projects' |
 | Token | `VIKUNJA_API_TOKEN` | **secret — session env only**, see below |
 
-- **Token — session env only, never persisted.** Export it in the shell you launch the MCP client
-  from; it is inherited by the server the client spawns. **Do not put it in `.mcp.json`.** If it's
+- **Token — session env only, never persisted.** Set it in the shell/session you launch the MCP
+  client from; the server the client spawns inherits it. **Do not put it in `.mcp.json`.** If it's
   missing, `check_connection` (and every write) reports the fix and stops.
+  ```powershell
+  $env:VIKUNJA_API_TOKEN = Read-Host -AsSecureString "Vikunja API token" | ConvertFrom-SecureString -AsPlainText   # PowerShell 7+
+  ```
   ```bash
   read -rs -p "Vikunja API token: " VIKUNJA_API_TOKEN && export VIKUNJA_API_TOKEN
   ```
-  A running client captured its environment at launch, so after exporting you must **relaunch** it.
+  A running client captured its environment at launch, so after setting it you must **relaunch** it.
 - **Default project** is optional; a tool's `project_id` argument overrides it. If neither is set,
   the tool errors asking for one.
 
@@ -62,9 +65,7 @@ uv run pytest      # optional: run the client tests
 **Claude Code** — either the CLI:
 
 ```bash
-claude mcp add vikunja --scope user \
-  --env VIKUNJA_URL=https://your-vikunja-host --env VIKUNJA_PROJECT_ID=7 \
-  -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
+claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host --env VIKUNJA_PROJECT_ID=7 -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
 ```
 
 …or copy [`.mcp.json.example`](.mcp.json.example) to `.mcp.json` (project scope, committable) and
