@@ -41,8 +41,8 @@ uv run pytest      # optional: run the client tests
 | Setting | Env var | Notes |
 | --- | --- | --- |
 | Instance URL | `VIKUNJA_URL` | **required**; the http(s) base URL of your instance |
-| Default project by **ID** | `VIKUNJA_PROJECT_ID` | preferred; no `/projects` lookup → minimal token |
-| Default project by name | `VIKUNJA_PROJECT` | convenience; its name→ID lookup needs 'read all projects' |
+| Default project by **ID** | `VIKUNJA_PROJECT_ID` | optional, preferred; no `/projects` lookup → minimal token |
+| Default project by name | `VIKUNJA_PROJECT` | optional; its name→ID lookup needs 'read all projects' |
 | Token | `VIKUNJA_API_TOKEN` | **secret — session env only**, see below |
 
 - **Token — session env only, never persisted.** Set it in the shell/session you launch the MCP
@@ -56,13 +56,15 @@ uv run pytest      # optional: run the client tests
   ```
   A running client captured its environment at launch, so after setting it you must **relaunch** it.
 - **Default project** is optional; a tool's `project_id` argument overrides it. If neither is set,
-  the tool errors asking for one.
+  the task tools **ask you which project to use** (prefer the numeric id) and reuse your answer for
+  that session — set a default here to skip the prompt.
 
 ## Register with an MCP client
 
 **Claude Code** — either the CLI:
 
 ```bash
+# --env VIKUNJA_PROJECT_ID is optional — omit it and the tools ask you which project per session
 claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host --env VIKUNJA_PROJECT_ID=7 -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
 ```
 
