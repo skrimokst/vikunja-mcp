@@ -18,7 +18,9 @@ Write-only — there is NO delete tool, by design. Configuration comes from the 
 (VIKUNJA_URL, VIKUNJA_API_TOKEN, and a default project via VIKUNJA_PROJECT_ID or VIKUNJA_PROJECT);
 tools accept an explicit project_id that overrides the default. If a tool reports the token or URL
 is missing, tell the operator to set VIKUNJA_API_TOKEN in the shell they launch Claude from and
-relaunch — it is never stored in config. Use check_connection first if unsure."""
+relaunch — it is never stored in config. If no default project is configured and a tool says it
+needs one, ASK the user which Vikunja project to use (prefer the numeric project id) and pass it as
+project_id — do not guess. Use check_connection first if unsure."""
 
 mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
 
@@ -31,6 +33,20 @@ def _require_ready(cfg: Config) -> None:
     issues = config_issues(cfg)
     if issues:
         raise VikunjaError("not configured: " + " ".join(issues))
+
+
+def _resolve_project(c: VikunjaClient, project_id: int | None, cfg: Config) -> int:
+    """Resolve the project to act on. When neither an explicit project_id nor a configured
+    default exists, raise a message that directs Claude to ASK the user rather than guess —
+    the client surfaces the tool error, and Claude acts on it."""
+    target = project_id if project_id else cfg.default_project
+    if not target:
+        raise VikunjaError(
+            "No Vikunja project was given and none is configured (VIKUNJA_PROJECT_ID / "
+            "VIKUNJA_PROJECT are unset). Ask the user which project to use — prefer the numeric "
+            "project id — then call this tool again with project_id set. Do not guess a project."
+        )
+    return c.resolve_project_id(target)
 
 
 def _fmt_task(t: dict) -> dict:
@@ -84,7 +100,7 @@ def list_tasks(project_id: int | None = None, include_done: bool = False) -> lis
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:
-        pid = c.resolve_project_id(project_id or cfg.default_project)
+        pid = _resolve_project(c, project_id, cfg)
         tasks = c.get_project_tasks(pid, include_done=include_done)
     if not include_done:
         tasks = [t for t in tasks if not t.get("done")]
@@ -118,7 +134,7 @@ def add_task(
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:
-        pid = c.resolve_project_id(project_id or cfg.default_project)
+        pid = _resolve_project(c, project_id, cfg)
         t = c.add_task(pid, title, description=description, priority=priority, due=due, labels=labels)
     return _fmt_task(t)
 
