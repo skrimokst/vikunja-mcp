@@ -5,10 +5,8 @@ list / get / add / update / complete / reopen — for Claude Code, Claude Deskto
 Runs locally over **stdio** (the client launches it as a subprocess). **Write-only — there is no
 delete tool, by design.**
 
-It mirrors the `vikunja-tasks` Claude skill (maintained separately) and follows the same rules: the
-API **token comes only from the session environment** (never a config file) and the **project is
-mandatory** (default via env, or per-call). Use the skill inside Claude Code, or this MCP from any
-client.
+The API **token comes only from the session environment** (never a config file) and the **project
+is mandatory** (a default via env, or passed per-call).
 
 ## Prerequisites
 
