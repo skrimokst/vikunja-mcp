@@ -50,11 +50,17 @@ def _resolve_project(c: VikunjaClient, project_id: int | None, cfg: Config) -> i
 
 
 def _fmt_task(t: dict) -> dict:
-    """Trim a raw Vikunja task to the fields worth returning (date-only due, label titles)."""
+    """Trim a raw Vikunja task to the fields worth returning (date-only due, label titles).
+
+    ``id`` is global and is what every tool's ``task_id`` takes. ``index``/``identifier`` are the
+    per-project number the UI shows (e.g. 12 / "HL-12") — display only; they are NOT interchangeable
+    with ``id`` and passing one as ``task_id`` silently addresses a different task."""
     due = t.get("due_date") or ""
     due = "" if (not due or str(due).startswith("0001")) else str(due)[:10]
     return {
         "id": t.get("id"),
+        "index": t.get("index"),
+        "identifier": t.get("identifier"),
         "title": t.get("title"),
         "done": bool(t.get("done")),
         "priority": t.get("priority") or 0,
@@ -110,7 +116,11 @@ def list_tasks(project_id: int | None = None, include_done: bool = False) -> lis
 
 @mcp.tool()
 def get_task(task_id: int) -> dict:
-    """Get a single task by id, including its description (HTML)."""
+    """Get a single task by its global id, including its description (HTML).
+
+    task_id is the `id` field, NOT the `index`/`identifier` shown in the UI. To act on a task the
+    user named by its UI number (e.g. "HL-12"), list the project and match on identifier/index first,
+    then pass that task's `id` here."""
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:
