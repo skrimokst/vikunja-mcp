@@ -55,9 +55,12 @@ uv run pytest      # optional: run the client tests
   read -rs -p "Vikunja API token: " VIKUNJA_API_TOKEN && export VIKUNJA_API_TOKEN
   ```
   A running client captured its environment at launch, so after setting it you must **relaunch** it.
-- **Default project** is optional; a tool's `project_id` argument overrides it. If neither is set,
-  the task tools **ask you which project to use** (prefer the numeric id) and reuse your answer for
-  that session — set a default here to skip the prompt.
+- **Default project** is optional; a tool's `project_id` argument overrides it. Leave it unset if
+  you work across **several projects** on this machine — then `check_connection`, `list_tasks` and
+  `add_task` take the project per call, and **ask you which project to use** (prefer the numeric id)
+  when you haven't said. Set a default only if one project dominates, to skip that prompt.
+  `get_task`, `update_task`, `complete_task` and `reopen_task` need no project at all: a task id is
+  global and identifies the task on its own.
 
 ## Register with an MCP client
 
@@ -77,13 +80,16 @@ connected. For **Claude Desktop**, add the same `mcpServers` block to its config
 
 Ask Claude to run `check_connection` — it returns `{ ready: true, url, project, ... }` once a task
 **read** succeeds, or `{ ready: false, issues: [...] }` with the specific cause (token / URL /
-project / 401 bad-token / 403 missing-scope). Then "list my open Vikunja tasks".
+project / 401 bad-token / 403 missing-scope). With no default project configured, name one
+("check the Vikunja connection for project 7") — proving the token works means reading something,
+and the project-less alternatives (`/projects`, `/tasks/all`) would demand a token scope the task
+tools themselves never need. Then "list my open Vikunja tasks".
 
 ## Tools
 
 | Tool | Does |
 | --- | --- |
-| `check_connection()` | readiness probe (token + project reachable, task read verified) |
+| `check_connection(project_id?)` | readiness probe (token + project reachable, task read verified) |
 | `list_tasks(project_id?, include_done=false)` | open tasks (or all), sorted open→priority→id |
 | `get_task(task_id)` | one task, including its description |
 | `add_task(title, project_id?, description?, priority?, due?, labels?)` | create (priority 0..5; `due` = `yyyy-MM-dd`; `description` markdown; labels created-if-missing) |

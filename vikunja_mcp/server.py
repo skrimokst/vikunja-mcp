@@ -15,12 +15,16 @@ from .config import Config, config_issues, load_config
 
 INSTRUCTIONS = """Manage tasks in a Vikunja instance: list, get, add, update, complete, reopen.
 Write-only — there is NO delete tool, by design. Configuration comes from the environment
-(VIKUNJA_URL, VIKUNJA_API_TOKEN, and a default project via VIKUNJA_PROJECT_ID or VIKUNJA_PROJECT);
-tools accept an explicit project_id that overrides the default. If a tool reports the token or URL
-is missing, tell the operator to set VIKUNJA_API_TOKEN in the shell they launch Claude from and
-relaunch — it is never stored in config. If no default project is configured and a tool says it
-needs one, ASK the user which Vikunja project to use (prefer the numeric project id) and pass it as
-project_id — do not guess. Use check_connection first if unsure."""
+(VIKUNJA_URL, VIKUNJA_API_TOKEN, and OPTIONALLY a default project via VIKUNJA_PROJECT_ID or
+VIKUNJA_PROJECT). If a tool reports the token or URL is missing, tell the operator to set
+VIKUNJA_API_TOKEN in the shell they launch Claude from and relaunch — it is never stored in config.
+
+A default project is often deliberately NOT set, because one machine works across several projects.
+So check_connection, list_tasks and add_task all take a project_id, which overrides any default. If
+a tool says it needs a project, ASK the user which Vikunja project to use (prefer the numeric
+project id) and pass it as project_id — do not guess, and do not carry a project id over from an
+earlier, unrelated request. get_task, update_task, complete_task and reopen_task take no project:
+a task id is global, and identifies the task on its own."""
 
 mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
 
@@ -70,18 +74,30 @@ def _fmt_task(t: dict) -> dict:
 
 
 @mcp.tool()
-def check_connection() -> dict:
-    """Verify the server can reach Vikunja and read the configured project.
+def check_connection(project_id: int | None = None) -> dict:
+    """Verify the server can reach Vikunja and read a project.
+
+    project_id overrides the configured default, and is REQUIRED when no default is set — the
+    normal case when several projects are used on one machine. There is no project-less health
+    check by design: proving the token works means reading something, and every alternative route
+    (/projects, /tasks/all) would demand a token scope the task tools themselves never need.
 
     Returns {ready: true, ...} when a task READ succeeds, else {ready: false, issues: [...]}
     with the specific fix (token/URL/project/scope). Run this first if anything seems off."""
     cfg = load_config()
     issues = config_issues(cfg)
+    target = project_id if project_id else cfg.default_project
+    if not target:
+        issues.append(
+            "No project to check — none is configured (VIKUNJA_PROJECT_ID / VIKUNJA_PROJECT are "
+            "unset) and no project_id was passed. Ask the user which project to use — prefer the "
+            "numeric project id — then call check_connection again with project_id. Do not guess."
+        )
     if issues:
         return {"ready": False, "issues": issues}
     try:
         with _client(cfg) as c:
-            info = c.probe(cfg.default_project)
+            info = c.probe(target)
     except VikunjaError as e:
         hint = ""
         if e.status == 401:

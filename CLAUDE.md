@@ -36,8 +36,15 @@ uv run python -c "import asyncio; from vikunja_mcp import server; print([t.name 
 
 - **Token: session env only** (`VIKUNJA_API_TOKEN`) — never a file, never `.mcp.json`. The server
   reads it from the process environment inherited from the shell that launched the MCP client.
-- **Config via env**: `VIKUNJA_URL` (required http(s) base URL), and a default project via
-  `VIKUNJA_PROJECT_ID` (preferred) or `VIKUNJA_PROJECT`. A tool's `project_id` argument overrides it.
+- **Config via env**: `VIKUNJA_URL` (required http(s) base URL), and an *optional* default project
+  via `VIKUNJA_PROJECT_ID` (preferred) or `VIKUNJA_PROJECT`. Assume there is **no default** — one
+  machine often spans several projects — so every project-scoped tool (`check_connection`,
+  `list_tasks`, `add_task`) takes a `project_id` that overrides the default, and errors asking the
+  user to name a project when neither exists. The task-id tools (`get`/`update`/`complete`/`reopen`)
+  hit `/tasks/{id}`, which is global: they take no project, and must not grow one.
+- **Minimal token scope**: every call must work with a project-scoped token. Never add a code path
+  that needs 'read all projects' (`GET /projects`) — the name→id lookup in `resolve_project_id` is
+  the one grandfathered exception, which is why `VIKUNJA_PROJECT_ID` is preferred over the name.
 - **Write-only**: never add a delete tool.
 - **Python stays LF** (pinned in `.gitattributes`). Commit `uv.lock` for reproducible installs.
 
