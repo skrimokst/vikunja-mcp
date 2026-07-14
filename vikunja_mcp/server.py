@@ -16,8 +16,9 @@ from .config import Config, config_issues, load_config
 INSTRUCTIONS = """Manage tasks in a Vikunja instance: list, get, add, update, complete, reopen.
 Write-only — there is NO delete tool, by design. Configuration comes from the environment
 (VIKUNJA_URL, VIKUNJA_API_TOKEN, and OPTIONALLY a default project via VIKUNJA_PROJECT_ID or
-VIKUNJA_PROJECT). If a tool reports the token or URL is missing, tell the operator to set
-VIKUNJA_API_TOKEN in the shell they launch Claude from and relaunch — it is never stored in config.
+VIKUNJA_PROJECT). If a tool reports the token is missing, it is never stored in config: the operator
+must set it in the shell they launch Claude from, then relaunch. Relay the prompt-for-it command in
+that error verbatim — never tell them to type the token inline, which would leak it to shell history.
 
 A default project is often deliberately NOT set, because one machine works across several projects.
 So check_connection, list_tasks and add_task all take a project_id, which overrides any default. If

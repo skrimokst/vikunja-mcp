@@ -49,7 +49,13 @@ def config_issues(cfg: Config) -> list[str]:
     if not cfg.token:
         issues.append(
             "VIKUNJA_API_TOKEN is not set in this environment — set it in the shell you launch "
-            "Claude from (e.g. export VIKUNJA_API_TOKEN=...), then relaunch. It is never stored in config."
+            "Claude from, then relaunch. It is never stored in config. Prompt for it rather than "
+            "typing it inline, so it stays out of shell history — give the operator the command "
+            "for their shell, verbatim:\n"
+            "  PowerShell 7+:  $env:VIKUNJA_API_TOKEN = Read-Host -AsSecureString 'Vikunja API token'"
+            " | ConvertFrom-SecureString -AsPlainText\n"
+            "  bash/zsh:       read -rs -p 'Vikunja API token: ' VIKUNJA_API_TOKEN"
+            " && export VIKUNJA_API_TOKEN"
         )
     if not (cfg.base_url.startswith("http://") or cfg.base_url.startswith("https://")):
         issues.append("VIKUNJA_URL is not set or not http(s) — set it to your Vikunja base URL.")
