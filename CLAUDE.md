@@ -6,8 +6,8 @@ Guidance for Claude Code working in this repo.
 
 `vikunja-mcp` — a local **stdio MCP server** (Python + FastMCP) that exposes Vikunja task
 operations as typed tools: list / get / add / update / complete / reopen, plus `check_connection`.
-**Write-only — there is no delete tool, by design.** It mirrors the separate `vikunja-tasks` Claude
-skill; keep the two behaviourally in step (same actions, same env vars, same semantics).
+**Write-only — there is no delete tool, by design.** This server is the only supported way to reach
+Vikunja from Claude.
 
 ## Layout
 

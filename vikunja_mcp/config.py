@@ -1,9 +1,9 @@
 """Configuration for the Vikunja MCP server — read from environment variables only.
 
-Secrets rule (matches the vikunja-tasks skill): the API token is read from the process
-environment ONLY (inherited from the shell that launched the MCP client). It is never read
-from a file and never written anywhere. TLS uses the machine's OS trust store (see
-``server.main``), so there is deliberately no CA-bundle or skip-verify option here.
+Secrets rule: the API token is read from the process environment ONLY (inherited from the shell
+that launched the MCP client). It is never read from a file and never written anywhere. TLS uses
+the machine's OS trust store (see ``server.main``), so there is deliberately no CA-bundle or
+skip-verify option here.
 """
 
 from __future__ import annotations

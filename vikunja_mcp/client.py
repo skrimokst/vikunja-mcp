@@ -1,8 +1,8 @@
-"""Thin Vikunja REST client — the exact endpoints the vikunja-tasks scripts use.
+"""Thin Vikunja REST client — only the endpoints the task tools need.
 
-Write-only by design: no delete. See ``vikunja-tasks/vikunja-tasks.ps1`` for the reference
-behavior this ports (view-based paginated fetch, label create-then-attach, read-modify-write
-updates, date coercion, markdown->HTML descriptions).
+Write-only by design: no delete. The quirks this handles, each forced by Vikunja's API:
+view-based paginated fetch, label create-then-attach, read-modify-write updates, date
+coercion, markdown->HTML descriptions.
 """
 
 from __future__ import annotations
