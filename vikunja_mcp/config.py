@@ -54,7 +54,9 @@ def config_issues(cfg: Config) -> list[str]:
             "for their shell, verbatim:\n"
             "  PowerShell 7+:  $env:VIKUNJA_API_TOKEN = Read-Host -AsSecureString 'Vikunja API token'"
             " | ConvertFrom-SecureString -AsPlainText\n"
-            "  bash/zsh:       read -rs -p 'Vikunja API token: ' VIKUNJA_API_TOKEN"
+            "  bash:           read -rs -p 'Vikunja API token: ' VIKUNJA_API_TOKEN"
+            " && export VIKUNJA_API_TOKEN\n"
+            "  zsh:            read -rs 'VIKUNJA_API_TOKEN?Vikunja API token: '"
             " && export VIKUNJA_API_TOKEN"
         )
     if not (cfg.base_url.startswith("http://") or cfg.base_url.startswith("https://")):

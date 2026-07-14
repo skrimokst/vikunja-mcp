@@ -52,8 +52,10 @@ uv run pytest      # optional: run the client tests
   $env:VIKUNJA_API_TOKEN = Read-Host -AsSecureString "Vikunja API token" | ConvertFrom-SecureString -AsPlainText   # PowerShell 7+
   ```
   ```bash
-  read -rs -p "Vikunja API token: " VIKUNJA_API_TOKEN && export VIKUNJA_API_TOKEN
+  read -rs -p "Vikunja API token: " VIKUNJA_API_TOKEN && export VIKUNJA_API_TOKEN   # bash
+  read -rs "VIKUNJA_API_TOKEN?Vikunja API token: " && export VIKUNJA_API_TOKEN      # zsh (its -p means coprocess)
   ```
+  Each prompts with echo off, so the token never reaches the command line or your shell history.
   A running client captured its environment at launch, so after setting it you must **relaunch** it.
 - **Default project** is optional; a tool's `project_id` argument overrides it. Leave it unset if
   you work across **several projects** on this machine — then `check_connection`, `list_tasks` and
