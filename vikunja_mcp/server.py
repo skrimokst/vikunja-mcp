@@ -25,7 +25,11 @@ So check_connection, list_tasks and add_task all take a project_id, which overri
 a tool says it needs a project, ASK the user which Vikunja project to use (prefer the numeric
 project id) and pass it as project_id — do not guess, and do not carry a project id over from an
 earlier, unrelated request. get_task, update_task, complete_task and reopen_task take no project:
-a task id is global, and identifies the task on its own."""
+a task id is global, and identifies the task on its own.
+
+When you MENTION a task to the user, name it by its `identifier` (the per-project ref the Vikunja UI
+shows, e.g. "HL-12") — that is the only number they can see. The global `id` is a tool handle: pass
+it as task_id, but keep it out of your prose. Fall back to the id only if identifier is empty."""
 
 mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
 
