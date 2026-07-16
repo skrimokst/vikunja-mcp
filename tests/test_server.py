@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from vikunja_mcp import server
+from vikunja_mcp.config import TOKEN_SETUP_HELP
 
 VIKUNJA_ENV = ("VIKUNJA_URL", "VIKUNJA_API_TOKEN", "VIKUNJA_PROJECT_ID", "VIKUNJA_PROJECT")
 
@@ -92,3 +93,14 @@ def test_missing_token_is_reported_before_any_project_check(env, monkeypatch):
 
     assert out["ready"] is False
     assert any("VIKUNJA_API_TOKEN" in i for i in out["issues"])
+
+
+def test_token_help_flag_prints_command_and_does_not_start_server(capsys, monkeypatch):
+    """`vikunja-mcp --token-help` reprints the setup command and returns before mcp.run()."""
+    monkeypatch.setattr(server.mcp, "run", lambda *a, **k: pytest.fail("server must not start"))
+
+    server.main(["--token-help"])
+
+    out = capsys.readouterr().out
+    assert out.strip() == TOKEN_SETUP_HELP
+    assert "PowerShell" in out and "VIKUNJA_API_TOKEN" in out

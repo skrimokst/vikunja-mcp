@@ -7,11 +7,13 @@ that is already installed on the machine just works — the server manages no ce
 
 from __future__ import annotations
 
+import sys
+
 import truststore
 from mcp.server.fastmcp import FastMCP
 
 from .client import VikunjaClient, VikunjaError
-from .config import Config, config_issues, load_config
+from .config import TOKEN_SETUP_HELP, Config, config_issues, load_config
 
 INSTRUCTIONS = """Manage tasks in a Vikunja instance: list, get, add, update, complete, reopen.
 Write-only — there is NO delete tool, by design. Configuration comes from the environment
@@ -213,7 +215,19 @@ def reopen_task(task_id: int) -> dict:
         return _fmt_task(c.set_done(task_id, False))
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    if "--token-help" in args:
+        # Reprint the setup command without starting the server — a stable way for a session-start
+        # reminder to fetch the exact command. Prints to stdout, so it must run BEFORE mcp.run(),
+        # which would otherwise claim stdout for the stdio protocol. Force UTF-8 first: the message
+        # has em-dashes that a Windows console code page would mangle for a capturing agent.
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+        print(TOKEN_SETUP_HELP)
+        return
     truststore.inject_into_ssl()  # verify TLS against the OS trust store (internal CA lives there)
     mcp.run()  # stdio transport by default
 
