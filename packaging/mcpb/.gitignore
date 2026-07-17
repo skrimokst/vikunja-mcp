@@ -1,2 +1,0 @@
-# Built bundles are machine-specific (may hold an absolute launcher path); build, don't commit.
-*.mcpb

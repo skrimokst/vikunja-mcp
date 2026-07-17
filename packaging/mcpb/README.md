@@ -18,15 +18,19 @@ Prereqs: the `vikunja-mcp` launcher on `PATH` (`uv tool install …`, then `uv t
 relaunch) and Node, for the official packer.
 
 ```bash
-npm install -g @anthropic-ai/mcpb      # Anthropic's official MCP-bundle CLI
-mcpb validate manifest.json            # schema-check against the CLI's shipped manifest schema
-mcpb pack .                            # -> vikunja-mcp-<version>.mcpb
+npm install -g @anthropic-ai/mcpb           # Anthropic's official MCP-bundle CLI
+mcpb validate manifest.json                 # schema-check against the CLI's shipped manifest schema
+mcpb pack . vikunja-mcp.mcpb                 # writes vikunja-mcp.mcpb into this folder
 ```
+
+The bundle is written **here, next to the manifest**. `*.mcpb` is gitignored (at the repo root), so
+this build artifact stays local and is never committed — drag it straight into Claude Desktop (below)
+from wherever it landed.
 
 **Always build with `mcpb pack`, never a hand-rolled zip.** `pack` validates the manifest against the
 schema the CLI ships before archiving, so a bad manifest fails loudly instead of installing broken.
 (An `.mcpb` *is* just a zip, but hand-zipping skips that check.) `.mcpbignore` keeps this directory's
-`README.md` / `.gitignore` out of the archive, so the bundle is just `manifest.json`.
+`README.md` out of the archive, so the bundle is just `manifest.json`.
 
 ## Install
 

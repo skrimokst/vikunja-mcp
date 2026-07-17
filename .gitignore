@@ -8,3 +8,6 @@ __pycache__/
 Thumbs.db
 .DS_Store
 *.swp
+
+# Built MCP bundles — a local build artifact (may carry a machine-specific launcher path); never commit
+*.mcpb
