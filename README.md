@@ -39,7 +39,9 @@ Two ways, by intent — *use* the server, or *work on* it.
 `uv tool install` builds the package into an isolated, uv-managed environment and drops a
 `vikunja-mcp` launcher on your tool bin dir (`%USERPROFILE%\.local\bin` on Windows, `~/.local/bin`
 elsewhere). The source is disposable once installed — this is what keeps the server installed with
-**no checkout on the machine**. Run `uv tool update-shell` once so that bin dir is on `PATH`.
+**no checkout on the machine**. Run `uv tool update-shell` **once** to add that bin dir to your
+user `PATH` (a permanent, user-scope change), then relaunch your shell so it takes effect — after
+that the `vikunja-mcp` launcher resolves by name, with no path needed anywhere.
 
 Install from the git remote — `uv` clones to a temp dir, builds, and discards it, so the source
 never lands on disk (note the url form is `host/path`, not the `host:path` an SSH remote prints):
@@ -108,9 +110,10 @@ Each setting has **one** right home, because each changes at a different rate:
 | `VIKUNJA_URL` | **user** scope — register the server once | one instance per machine |
 | `VIKUNJA_PROJECT_ID` | **per repo** — `.claude/settings.json` `env` | differs for every repo |
 
-Register the server once, at user scope, with only the URL. If you installed it as a standalone
-tool, point the client at the launcher (give the absolute path the installer printed if the client
-can't find it on `PATH`):
+Register the server once, at user scope, with only the URL. For a standalone-tool install, register
+the launcher **by name** — this works because `uv tool update-shell` (above) put its bin dir on
+`PATH`; relaunch first if you haven't since. A later `uv tool upgrade` keeps the launcher name, so
+this registration never changes on update:
 
 ```bash
 claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host -- vikunja-mcp
