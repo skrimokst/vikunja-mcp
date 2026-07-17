@@ -226,6 +226,55 @@ def test_update_is_read_modify_write_and_clears_due():
     assert posted["due_date"] is None      # cleared
 
 
+def _append_client(existing: str, posted: dict):
+    def handler(req):
+        m, p = req.method, req.url.path
+        if m == "GET" and p == "/api/v1/tasks/42":
+            return httpx.Response(200, json={"id": 42, "title": "t", "description": existing})
+        if m == "POST" and p == "/api/v1/tasks/42":
+            posted.update(body_of(req))
+            return httpx.Response(200, json=posted)
+        raise AssertionError(f"unexpected {m} {p}")
+
+    return make_client(handler)
+
+
+def test_description_append_concatenates_html_without_reconverting():
+    posted: dict = {}
+    _append_client("<p>first</p>", posted).update_task(42, description_append="**second**")
+    # existing HTML kept verbatim, new chunk converted and appended
+    assert posted["description"] == "<p>first</p><p><strong>second</strong></p>"
+
+
+def test_description_append_onto_empty_description():
+    posted: dict = {}
+    _append_client("", posted).update_task(42, description_append="hello")
+    assert posted["description"] == "<p>hello</p>"  # no stray leading whitespace/markup
+
+
+def test_description_append_is_repeatable():
+    """Appending twice must accumulate — the property that lets a long description be built up."""
+    html = ""
+    for chunk in ("one", "two", "three"):
+        posted: dict = {}
+        _append_client(html, posted).update_task(42, description_append=chunk)
+        html = posted["description"]
+    assert html == "<p>one</p><p>two</p><p>three</p>"
+
+
+def test_description_and_append_together_is_an_error():
+    posted: dict = {}
+    with pytest.raises(VikunjaError, match="not both"):
+        _append_client("<p>x</p>", posted).update_task(42, description="a", description_append="b")
+    assert not posted  # nothing written
+
+
+def test_description_append_leaves_other_fields_alone():
+    posted: dict = {}
+    _append_client("<p>x</p>", posted).update_task(42, description_append="y")
+    assert posted["title"] == "t"
+
+
 def test_set_done_reads_then_posts():
     posted = {}
 

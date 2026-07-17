@@ -207,6 +207,7 @@ def update_task(
     task_id: int,
     title: str | None = None,
     description: str | None = None,
+    description_append: str | None = None,
     priority: int | None = None,
     due: str | None = None,
     labels: list[str] | None = None,
@@ -216,7 +217,18 @@ def update_task(
 
     Pass `description` as **markdown** — it is converted to HTML here, because Vikunja stores the
     field as HTML. Handing back the HTML that get_task returned is safe (it survives the converter
-    unchanged), so you can read a description, tweak it, and write it back without mangling it."""
+    unchanged), so you can read a description, tweak it, and write it back without mangling it.
+
+    `description_append` adds markdown to the END of the description instead of replacing it, and
+    is how you write a description too long to fit in one tool call: send the first part via
+    add_task/update_task, then append the rest across as many calls as you need. Each call only
+    costs the chunk you send, so the description can grow far past what you could emit at once.
+    Passing both `description` and `description_append` is an error — pick replace or grow.
+
+    Split chunks on BLOCK boundaries (between paragraphs, list items, whole code fences). Each
+    chunk is converted as standalone markdown, so a chunk cut mid-block — half a fenced code
+    block, a table split across two calls — converts wrongly and cannot be repaired by the next
+    chunk. `labels` are additive: they are attached, never removed."""
     cfg = load_config()
     _require_ready(cfg)
     changed: dict = {}
@@ -224,6 +236,8 @@ def update_task(
         changed["title"] = title
     if description is not None:
         changed["description"] = description
+    if description_append is not None:
+        changed["description_append"] = description_append
     if due is not None:
         changed["due"] = due
     with _client(cfg) as c:

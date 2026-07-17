@@ -217,18 +217,34 @@ class VikunjaClient:
         *,
         title: Any = _UNSET,
         description: Any = _UNSET,
+        description_append: Any = _UNSET,
         priority: int | None = None,
         due: Any = _UNSET,
         labels: list[str] | None = None,
     ) -> dict:
         """Read-modify-write: only provided fields change. ``description=""`` clears the
-        description; ``due=""`` clears the due date."""
+        description; ``due=""`` clears the due date.
+
+        ``description_append`` grows the description instead of replacing it. Vikunja has no
+        append endpoint, so this is the same read-modify-write: the chunk is converted to HTML
+        and concatenated onto the stored HTML, which is left as-is (never re-converted). It
+        exists so a caller can build a description too large to send in one call — each chunk
+        costs only its own size, even though the whole description is re-sent to Vikunja."""
         check_priority(priority)
+        if description is not _UNSET and description_append is not _UNSET:
+            raise VikunjaError(
+                "pass description or description_append, not both — the first replaces the "
+                "description, the second grows it, and together they are ambiguous."
+            )
         task = self.get_task(task_id)
         if title is not _UNSET:
             task["title"] = title
         if description is not _UNSET:
             task["description"] = to_vk_html(description) if description else ""
+        if description_append is not _UNSET and description_append:
+            # Concatenate HTML+HTML. The stored side is already HTML and must NOT be re-converted
+            # (harmless but pointless); only the incoming markdown chunk is converted.
+            task["description"] = (task.get("description") or "") + to_vk_html(description_append)
         if priority is not None:
             task["priority"] = priority
         if due is not _UNSET:

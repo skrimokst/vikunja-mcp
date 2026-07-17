@@ -41,7 +41,7 @@ uv run pytest      # optional: run the client tests
 | Setting | Env var | Notes |
 | --- | --- | --- |
 | Instance URL | `VIKUNJA_URL` | **required**; the http(s) base URL of your instance |
-| Default project by **ID** | `VIKUNJA_PROJECT_ID` | optional, preferred; no `/projects` lookup → minimal token |
+| Default project by **ID** | `VIKUNJA_PROJECT_ID` | optional, preferred; set it **per repo** (below); no `/projects` lookup → minimal token |
 | Default project by name | `VIKUNJA_PROJECT` | optional; its name→ID lookup needs 'read all projects' |
 | Token | `VIKUNJA_API_TOKEN` | **secret — session env only**, see below |
 
@@ -66,17 +66,41 @@ uv run pytest      # optional: run the client tests
 
 ## Register with an MCP client
 
-**Claude Code** — either the CLI:
+Each setting has **one** right home, because each changes at a different rate:
+
+| Setting | Where | Why there |
+| --- | --- | --- |
+| `VIKUNJA_API_TOKEN` | the **shell** you launch from | secret; never in any file |
+| `VIKUNJA_URL` | **user** scope — register the server once | one instance per machine |
+| `VIKUNJA_PROJECT_ID` | **per repo** — `.claude/settings.json` `env` | differs for every repo |
+
+Register the server once, at user scope, with only the URL:
 
 ```bash
-# --env VIKUNJA_PROJECT_ID is optional — omit it and the tools ask you which project per session
-claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host --env VIKUNJA_PROJECT_ID=7 -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
+claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
 ```
 
-…or copy [`.mcp.json.example`](.mcp.json.example) to `.mcp.json` (project scope, committable) and
-edit the path/URL/project. **The token is deliberately absent from that file** — set it in your
-shell (above). Then relaunch Claude and run `/mcp` (or `claude mcp list`) to confirm `vikunja` is
-connected. For **Claude Desktop**, add the same `mcpServers` block to its config.
+Then, in **each repo** whose tasks live in a Vikunja project, name that project in
+`.claude/settings.json` — Claude Code applies its `env` to the MCP servers it spawns, so this adds
+the default *without* redefining the server:
+
+```json
+{ "env": { "VIKUNJA_PROJECT_ID": "11" } }
+```
+
+Do **not** put `VIKUNJA_PROJECT_ID` at user scope: one machine spans several projects, and a global
+default silently sends every repo's tasks to whichever project you named first. Omit it entirely and
+the tools ask which project to use — the intended fallback, not a failure. Use
+`.claude/settings.local.json` instead if the id shouldn't be committed (it is gitignored).
+
+Prefer a **project-scope [`.mcp.json`](.mcp.json.example)** only if a repo needs a wholly different
+server (a second instance, say). Scopes do **not** merge — Claude Code takes the entire entry from
+the highest-precedence scope (local → project → user), so a project-scope entry must restate
+`command`, `args` and `VIKUNJA_URL`, or it will lose them. **The token is deliberately absent from
+that file** — set it in your shell (above).
+
+Then relaunch Claude and run `/mcp` (or `claude mcp list`) to confirm `vikunja` is connected. For
+**Claude Desktop**, add the same `mcpServers` block to its config.
 
 ## Verify
 
@@ -95,7 +119,7 @@ tools themselves never need. Then "list my open Vikunja tasks".
 | `list_tasks(project_id?, include_done=false)` | open tasks (or all), sorted open→priority→id |
 | `get_task(task_id)` | one task, including its description (returned as **HTML** — see below) |
 | `add_task(title, project_id?, description?, priority?, due?, labels?)` | create (priority 0..5; `due` = `yyyy-MM-dd`; `description` markdown; labels created-if-missing) |
-| `update_task(task_id, title?, description?, priority?, due?, labels?)` | change only the passed fields; `due=""`/`description=""` clear |
+| `update_task(task_id, title?, description?, description_append?, priority?, due?, labels?)` | change only the passed fields; `due=""`/`description=""` clear; `description_append` grows the description (see below) |
 | `complete_task(task_id)` / `reopen_task(task_id)` | mark done / not done |
 
 Tasks are returned as structured JSON (id, title, done, priority, due, labels). Priority is
@@ -106,6 +130,25 @@ editor produces — HTML *is* the storage format. `add_task`/`update_task` take 
 for you, but `get_task` returns Vikunja's HTML verbatim; nothing converts it back. The asymmetry is
 deliberate. Feeding a description from `get_task` straight into `update_task` is safe — HTML passes
 through the converter unchanged — so read-modify-write of a description won't mangle it.
+
+**Long descriptions: `description_append`.** Neither this server nor Vikunja limits description
+length in practice (~1MB round-trips fine). The real ceiling is the *calling agent's* output budget
+for a single tool call: the description is text the model has to emit, and an over-long call is
+truncated before it reaches this server — so the failure looks like the tool erroring, not Vikunja
+rejecting anything. Writing the text to a file first does **not** help; that costs the same tokens.
+Instead, send the first part, then grow it:
+
+```text
+add_task(title="Report", description="# Report\n\nOpening.")   -> id 42
+update_task(42, description_append="## Findings\n\n...")
+update_task(42, description_append="## Conclusion\n\n...")
+```
+
+Vikunja has no append endpoint, so this is a read-modify-write: the chunk is converted to HTML and
+concatenated onto the stored HTML (which is never re-converted). Each call costs only its own chunk,
+so a description can grow far past what one call could carry. **Split on block boundaries** — each
+chunk is converted as standalone markdown, so a chunk cut mid-block (half a code fence, a split
+table) converts wrongly and the next chunk cannot repair it.
 
 ---
 
