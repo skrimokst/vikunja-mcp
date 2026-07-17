@@ -15,7 +15,8 @@ Vikunja from Claude.
 - `vikunja_mcp/client.py` — `VikunjaClient`: the REST logic (view-based paginated fetch, label
   create-then-attach, read-modify-write updates, date coercion, markdown→HTML descriptions).
 - `vikunja_mcp/server.py` — FastMCP instance, the `@mcp.tool` definitions, `main()`.
-- `tests/test_client.py` — pure-function + `httpx.MockTransport` tests (no live server needed).
+- `tests/` — no live server needed. `test_client.py` (pure functions + `httpx.MockTransport`),
+  `test_config.py` (env parsing), `test_server.py` (tool layer + `_fmt_task` shaping).
 
 ## Working on it
 

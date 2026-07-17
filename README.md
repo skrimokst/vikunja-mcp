@@ -122,8 +122,34 @@ tools themselves never need. Then "list my open Vikunja tasks".
 | `update_task(task_id, title?, description?, description_append?, priority?, due?, labels?)` | change only the passed fields; `due=""`/`description=""` clear; `description_append` grows the description (see below) |
 | `complete_task(task_id)` / `reopen_task(task_id)` | mark done / not done |
 
-Tasks are returned as structured JSON (id, title, done, priority, due, labels). Priority is
-`0..5`: `0`=Unset `1`=Low `2`=Medium `3`=High `4`=Urgent `5`=DO NOW.
+Tasks come back as structured JSON. Priority is `0..5`: `0`=Unset `1`=Low `2`=Medium `3`=High
+`4`=Urgent `5`=DO NOW.
+
+| Field | Notes |
+| --- | --- |
+| `id` | **global**; this is what every `task_id` argument takes |
+| `index`, `identifier` | the per-project number the UI shows (`26`, `TEST-26`) — display only |
+| `project_id` | which project the task is in; the task-id tools take no project, so this is the only way to tell |
+| `title`, `done`, `priority`, `labels` | writable via `add_task`/`update_task` |
+| `due` | `yyyy-MM-dd`; `""` when unset |
+| `done_at`, `start_date`, `end_date`, `created`, `updated` | RFC3339; `""` when unset |
+| `assignees` | **usernames**, read-only (see below) |
+| `related_tasks` | `{kind: [{id, identifier, title, done}]}` — references only |
+| `reminders` | `[{reminder, relative_to, relative_period}]` |
+| `repeat_after`, `repeat_mode` | seconds; `0` = does not repeat |
+| `description` | `get_task` only — HTML, see above |
+
+Everything above rides in the payload Vikunja already sends, so none of it costs an extra request.
+`bucket_id`, `position`, `cover_image_attachment_id` and `reactions` are dropped: kanban/UI state
+with nothing in it for a caller. Unset dates arrive as `0001-01-01T00:00:00Z` and are normalized to
+`""`, so nothing renders a year-1 timestamp as real.
+
+Only `title`/`description`/`priority`/`due`/`labels` are **writable**; the rest are reported as-is.
+`assignees` are usernames rather than ids because a project-scoped token gets **401 on `GET /user`**
+— it can read the assignees embedded in a task, but cannot look a user up, so an id would be a
+handle nothing here can resolve. `related_tasks` is trimmed to references on purpose: Vikunja nests
+the *entire* related task, description included, which would put a task's whole body inside every
+task linking to it.
 
 **Descriptions: write markdown, read HTML.** Vikunja's description field stores the HTML its WYSIWYG
 editor produces — HTML *is* the storage format. `add_task`/`update_task` take markdown and convert it

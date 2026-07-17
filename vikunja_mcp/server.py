@@ -67,23 +67,82 @@ def _resolve_project(c: VikunjaClient, project_id: int | None, cfg: Config) -> i
     return c.resolve_project_id(target)
 
 
+def _fmt_date(value: object, *, date_only: bool = False) -> str:
+    """Vikunja spells "unset" as the zero time ``0001-01-01T00:00:00Z``. Return "" for that, so
+    nothing downstream renders a year-1 timestamp as a real date. Otherwise pass the RFC3339
+    string through, or trim it to ``yyyy-MM-dd`` for the fields we keep date-only."""
+    s = str(value or "")
+    if not s or s.startswith("0001"):
+        return ""
+    return s[:10] if date_only else s
+
+
+def _fmt_related(related: object) -> dict:
+    """Trim ``related_tasks`` to references.
+
+    Vikunja nests a WHOLE task under each relation kind — description included, and its own
+    ``related_tasks`` besides. Passing that through would put a task's full body (and, here,
+    megabyte descriptions) inside every other task that links to it. Keep only enough to name
+    the task and fetch it with get_task. ``identifier`` is usually "" on these nested copies,
+    which is why ``id`` is the reliable handle."""
+    out: dict[str, list[dict]] = {}
+    for kind, tasks in (related or {}).items():  # type: ignore[union-attr]
+        refs = [
+            {
+                "id": rt.get("id"),
+                "identifier": rt.get("identifier") or "",
+                "title": rt.get("title"),
+                "done": bool(rt.get("done")),
+            }
+            for rt in (tasks or [])
+        ]
+        if refs:  # drop empty kinds; Vikunja sends {} when there are no relations at all
+            out[str(kind)] = refs
+    return out
+
+
 def _fmt_task(t: dict) -> dict:
-    """Trim a raw Vikunja task to the fields worth returning (date-only due, label titles).
+    """Trim a raw Vikunja task to the fields worth returning.
 
     ``id`` is global and is what every tool's ``task_id`` takes. ``index``/``identifier`` are the
     per-project number the UI shows (e.g. 12 / "HL-12") — display only; they are NOT interchangeable
-    with ``id`` and passing one as ``task_id`` silently addresses a different task."""
-    due = t.get("due_date") or ""
-    due = "" if (not due or str(due).startswith("0001")) else str(due)[:10]
+    with ``id`` and passing one as ``task_id`` silently addresses a different task.
+
+    Everything here is already in the payload Vikunja sends, so none of it costs an extra request.
+    The raw task's remaining fields are deliberately dropped: bucket_id/position/
+    cover_image_attachment_id/reactions are kanban and UI state with nothing in them for a caller."""
     return {
         "id": t.get("id"),
         "index": t.get("index"),
         "identifier": t.get("identifier"),
+        "project_id": t.get("project_id"),
         "title": t.get("title"),
         "done": bool(t.get("done")),
+        "done_at": _fmt_date(t.get("done_at")),
         "priority": t.get("priority") or 0,
-        "due": due,
+        "due": _fmt_date(t.get("due_date"), date_only=True),
+        "start_date": _fmt_date(t.get("start_date")),
+        "end_date": _fmt_date(t.get("end_date")),
         "labels": [lbl.get("title") for lbl in (t.get("labels") or [])],
+        # Usernames, not ids: this token cannot resolve a user (GET /user is 401), so an id here
+        # would be a handle nothing can look up. username is always set; name is often "".
+        "assignees": [a.get("username") or a.get("name") or "" for a in (t.get("assignees") or [])],
+        "related_tasks": _fmt_related(t.get("related_tasks")),
+        # A reminder is EITHER absolute (reminder set, relative_to "") or relative to another date
+        # field (relative_to + relative_period seconds, and reminder left at the zero time until
+        # Vikunja resolves it). Keep all three or the difference is invisible.
+        "reminders": [
+            {
+                "reminder": _fmt_date(r.get("reminder")),
+                "relative_to": r.get("relative_to") or "",
+                "relative_period": r.get("relative_period") or 0,
+            }
+            for r in (t.get("reminders") or [])
+        ],
+        "repeat_after": t.get("repeat_after") or 0,
+        "repeat_mode": t.get("repeat_mode") or 0,
+        "created": _fmt_date(t.get("created")),
+        "updated": _fmt_date(t.get("updated")),
     }
 
 
@@ -132,7 +191,8 @@ def list_tasks(project_id: int | None = None, include_done: bool = False) -> lis
     """List tasks in a Vikunja project (open only unless include_done=true).
 
     Uses VIKUNJA_PROJECT_ID/VIKUNJA_PROJECT when project_id is omitted. Sorted open-first,
-    then priority (high first), then id."""
+    then priority (high first), then id. Returns the same fields as get_task EXCEPT
+    `description` — list a project to find tasks, then get_task the one you want to read."""
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:
@@ -154,7 +214,19 @@ def get_task(task_id: int) -> dict:
 
     task_id is the `id` field, NOT the `index`/`identifier` shown in the UI. To act on a task the
     user named by its UI number (e.g. "HL-12"), list the project and match on identifier/index first,
-    then pass that task's `id` here."""
+    then pass that task's `id` here.
+
+    Fields that are READ-ONLY here — no tool writes them, so report them, do not promise to change
+    them: `assignees` (usernames), `related_tasks`, `reminders`, `repeat_after`/`repeat_mode`,
+    `done_at`, `start_date`/`end_date`, `created`/`updated`, `project_id`.
+
+    `project_id` says which project the task is in — useful because this tool takes no project, so
+    it is otherwise unknowable from a task id alone. `related_tasks` maps a relation kind
+    ("subtask", "parenttask", "related", ...) to task REFERENCES; use each `id` with get_task to
+    read one, since their `identifier` is usually empty. A `reminder` with `relative_to` set fires
+    relative to that field (`relative_period` seconds, negative = before) and its `reminder` may be
+    "" until Vikunja resolves it; an absolute reminder has `reminder` set and `relative_to` "".
+    `repeat_after` is seconds (0 = does not repeat). Empty string means unset for every date."""
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:

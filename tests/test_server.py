@@ -1,5 +1,6 @@
 """Tests for the tool layer — project resolution and readiness, which is where the multi-project
-setup (no VIKUNJA_PROJECT_ID in the env, a project_id on every call) is easy to get wrong.
+setup (no VIKUNJA_PROJECT_ID in the env, a project_id on every call) is easy to get wrong — plus
+the payload shaping in _fmt_task.
 
 The env is patched per test; no live server is needed.
 """
@@ -10,8 +11,11 @@ import pytest
 
 from vikunja_mcp import server
 from vikunja_mcp.config import TOKEN_SETUP_HELP
+from vikunja_mcp.server import _fmt_date, _fmt_related, _fmt_task
 
 VIKUNJA_ENV = ("VIKUNJA_URL", "VIKUNJA_API_TOKEN", "VIKUNJA_PROJECT_ID", "VIKUNJA_PROJECT")
+
+ZERO = "0001-01-01T00:00:00Z"  # Vikunja's "unset" for every date field
 
 
 @pytest.fixture
@@ -104,3 +108,108 @@ def test_token_help_flag_prints_command_and_does_not_start_server(capsys, monkey
     out = capsys.readouterr().out
     assert out.strip() == TOKEN_SETUP_HELP
     assert "PowerShell" in out and "VIKUNJA_API_TOKEN" in out
+
+
+# --- payload shaping --------------------------------------------------------
+# Fixtures below are trimmed copies of what a live Vikunja 2.3.0 actually returns.
+
+
+def test_fmt_date_treats_the_zero_time_as_unset():
+    assert _fmt_date(ZERO) == ""
+    assert _fmt_date("0001-01-01T00:00:00+01:00") == ""
+    assert _fmt_date(None) == ""
+    assert _fmt_date("") == ""
+
+
+def test_fmt_date_passes_real_dates_through():
+    assert _fmt_date("2026-07-17T13:09:53+01:00") == "2026-07-17T13:09:53+01:00"
+    assert _fmt_date("2026-07-17T13:09:53+01:00", date_only=True) == "2026-07-17"
+
+
+def test_fmt_related_trims_nested_tasks_to_references():
+    """Vikunja nests the WHOLE task under each kind. A 1MB description must not ride along."""
+    raw = {
+        "subtask": [
+            {"id": 312, "identifier": "", "title": "child", "done": False,
+             "description": "x" * 100_000, "related_tasks": {}, "labels": [{"title": "l"}]},
+        ]
+    }
+    out = _fmt_related(raw)
+    assert out == {"subtask": [{"id": 312, "identifier": "", "title": "child", "done": False}]}
+    assert "description" not in out["subtask"][0]
+
+
+def test_fmt_related_handles_no_relations():
+    assert _fmt_related({}) == {}
+    assert _fmt_related(None) == {}
+    assert _fmt_related({"subtask": []}) == {}  # empty kinds dropped
+
+
+def _raw(**over) -> dict:
+    base = {
+        "id": 306, "index": 26, "identifier": "TEST-26", "project_id": 11,
+        "title": "t", "done": False, "done_at": ZERO, "priority": 0,
+        "due_date": ZERO, "start_date": ZERO, "end_date": ZERO,
+        "labels": None, "assignees": None, "related_tasks": {}, "reminders": None,
+        "repeat_after": 0, "repeat_mode": 0,
+        "created": "2026-07-17T13:09:53+01:00", "updated": "2026-07-17T13:09:53+01:00",
+        # noise that must NOT surface
+        "bucket_id": 4, "position": 99, "cover_image_attachment_id": 0, "reactions": None,
+    }
+    base.update(over)
+    return base
+
+
+def test_fmt_task_exposes_project_id():
+    """The task-id tools take no project, so this is the only way to know where a task lives."""
+    assert _fmt_task(_raw())["project_id"] == 11
+
+
+def test_fmt_task_blanks_unset_dates_rather_than_showing_year_one():
+    out = _fmt_task(_raw())
+    for field in ("due", "done_at", "start_date", "end_date"):
+        assert out[field] == "", field
+
+
+def test_fmt_task_keeps_real_dates():
+    out = _fmt_task(_raw(due_date="2026-08-01T00:00:00Z", done_at="2026-07-17T13:00:00Z"))
+    assert out["due"] == "2026-08-01"                 # date-only
+    assert out["done_at"] == "2026-07-17T13:00:00Z"   # full timestamp
+
+
+def test_fmt_task_assignees_are_usernames_not_ids():
+    """This token cannot resolve a user id (GET /user is 401), so an id would be a dead handle."""
+    out = _fmt_task(_raw(assignees=[{"id": 3, "name": "", "username": "service"}]))
+    assert out["assignees"] == ["service"]
+
+
+def test_fmt_task_assignee_falls_back_to_name_when_username_missing():
+    out = _fmt_task(_raw(assignees=[{"id": 3, "name": "Real Name", "username": ""}]))
+    assert out["assignees"] == ["Real Name"]
+
+
+def test_fmt_task_keeps_all_three_reminder_fields():
+    """Absolute vs relative reminders are only distinguishable if all three survive."""
+    out = _fmt_task(_raw(reminders=[
+        {"reminder": "2026-08-01T09:00:00Z", "relative_period": 0, "relative_to": ""},
+        {"reminder": ZERO, "relative_period": -3600, "relative_to": "due_date"},
+    ]))
+    assert out["reminders"] == [
+        {"reminder": "2026-08-01T09:00:00Z", "relative_to": "", "relative_period": 0},
+        {"reminder": "", "relative_to": "due_date", "relative_period": -3600},
+    ]
+
+
+def test_fmt_task_drops_kanban_and_ui_noise():
+    out = _fmt_task(_raw())
+    for junk in ("bucket_id", "position", "cover_image_attachment_id", "reactions"):
+        assert junk not in out, junk
+
+
+def test_fmt_task_tolerates_nulls_everywhere():
+    """Vikunja sends null (not []) for empty labels/assignees/reminders."""
+    out = _fmt_task(_raw())
+    assert out["labels"] == []
+    assert out["assignees"] == []
+    assert out["reminders"] == []
+    assert out["related_tasks"] == {}
