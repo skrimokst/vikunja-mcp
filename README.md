@@ -10,7 +10,8 @@ is mandatory** (a default via env, or passed per-call).
 
 ## Prerequisites
 
-Installation is **manual** — there's no installer. You need three things:
+Installation is a couple of `uv` commands — no OS installer, no background service (the MCP client
+launches the server on demand). You need three things:
 
 1. **[uv](https://docs.astral.sh/uv/)** — the only hard dependency. It provisions a matching Python
    (`requires-python >=3.11`) and installs the deps (`mcp`, `httpx`, `truststore`, `markdown`)
@@ -26,9 +27,42 @@ Installation is **manual** — there's no installer. You need three things:
    project-views + view-tasks read, label read/create) plus your instance URL. With a **project ID**
    the token needs no 'read all projects' scope. Share the target project with that account.
 
-The first `uv sync` needs network access (it fetches Python + the packages).
+The first install (`uv tool install` or `uv sync`) needs network access — `uv` fetches a matching
+Python and the packages; after that the server runs offline against your instance.
 
 ## Install
+
+Two ways, by intent — *use* the server, or *work on* it.
+
+### Use it: install as a standalone tool
+
+`uv tool install` builds the package into an isolated, uv-managed environment and drops a
+`vikunja-mcp` launcher on your tool bin dir (`%USERPROFILE%\.local\bin` on Windows, `~/.local/bin`
+elsewhere). The source is disposable once installed — this is what keeps the server installed with
+**no checkout on the machine**. Run `uv tool update-shell` once so that bin dir is on `PATH`.
+
+Install from the git remote — `uv` clones to a temp dir, builds, and discards it, so the source
+never lands on disk (note the url form is `host/path`, not the `host:path` an SSH remote prints):
+
+```bash
+uv tool install git+ssh://git@your-git-host/you/vikunja-mcp.git
+uv tool upgrade vikunja-mcp                                        # update later (re-fetches the remote)
+```
+
+…or from a wheel you build yourself, if you'd rather not reach the remote to install or update:
+
+```bash
+uv build                                                          # -> dist/vikunja_mcp-<ver>-py3-none-any.whl
+uv tool install ./dist/vikunja_mcp-<ver>-py3-none-any.whl
+uv tool install --reinstall ./dist/vikunja_mcp-<newver>-py3-none-any.whl   # update later
+```
+
+Remove it with `uv tool uninstall vikunja-mcp`. Upgrades keep the launcher path stable, so the MCP
+registration below never has to change — just relaunch the client.
+
+### Work on it: dev checkout
+
+For hacking on the code, keep the checkout and run out of it — no install, edits take effect live:
 
 ```bash
 cd vikunja-mcp
@@ -74,7 +108,15 @@ Each setting has **one** right home, because each changes at a different rate:
 | `VIKUNJA_URL` | **user** scope — register the server once | one instance per machine |
 | `VIKUNJA_PROJECT_ID` | **per repo** — `.claude/settings.json` `env` | differs for every repo |
 
-Register the server once, at user scope, with only the URL:
+Register the server once, at user scope, with only the URL. If you installed it as a standalone
+tool, point the client at the launcher (give the absolute path the installer printed if the client
+can't find it on `PATH`):
+
+```bash
+claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host -- vikunja-mcp
+```
+
+From a dev checkout instead, run it out of the tree — no install needed, but the checkout must stay:
 
 ```bash
 claude mcp add vikunja --scope user --env VIKUNJA_URL=https://your-vikunja-host -- uv run --directory /abs/path/to/vikunja-mcp vikunja-mcp
