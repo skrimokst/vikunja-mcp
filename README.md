@@ -144,8 +144,22 @@ the highest-precedence scope (local → project → user), so a project-scope en
 `command`, `args` and `VIKUNJA_URL`, or it will lose them. **The token is deliberately absent from
 that file** — set it in your shell (above).
 
-Then relaunch Claude and run `/mcp` (or `claude mcp list`) to confirm `vikunja` is connected. For
-**Claude Desktop**, add the same `mcpServers` block to its config.
+Then relaunch Claude and run `/mcp` (or `claude mcp list`) to confirm `vikunja` is connected.
+
+### Claude Desktop / cowork — the `.mcpb` bundle
+
+Claude **Desktop** (and **cowork** in *local* mode, which shares Desktop's config) doesn't use
+`claude mcp add`; it installs an **MCP bundle**. A ready-to-build manifest lives in
+[`packaging/mcpb/`](packaging/mcpb/) — see its README for the full build + install steps. In short:
+
+- Build the `.mcpb` with Anthropic's official **[`@anthropic-ai/mcpb`](https://www.npmjs.com/package/@anthropic-ai/mcpb)**
+  CLI (`mcpb validate` + `mcpb pack`), so the manifest is schema-checked — not a hand-zipped archive.
+- Drag it onto **Settings → Extensions**. It prompts for the URL and token at install; the token
+  field is `sensitive`, so Desktop keeps it in the **OS keychain** and injects it at launch. This is
+  the one place the token model differs from the CLI — Desktop has no launching shell to inherit it
+  from — and it still never touches a config file.
+- **cowork remote** can reach neither a LAN instance nor your local launcher, so the bundle only
+  works in **local** mode on the machine where the server is installed.
 
 ## Verify
 

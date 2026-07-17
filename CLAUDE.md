@@ -17,6 +17,10 @@ Vikunja from Claude.
 - `vikunja_mcp/server.py` — FastMCP instance, the `@mcp.tool` definitions, `main()`.
 - `tests/` — no live server needed. `test_client.py` (pure functions + `httpx.MockTransport`),
   `test_config.py` (env parsing), `test_server.py` (tool layer + `_fmt_task` shaping).
+- `packaging/mcpb/` — the Claude Desktop / cowork **MCP bundle** manifest (`.mcpb`). Build it with
+  Anthropic's official `@anthropic-ai/mcpb` CLI (`mcpb validate` + `mcpb pack`), never a hand-zipped
+  archive — `pack` schema-checks the manifest first. The token rides a `sensitive` `user_config`
+  field (→ OS keychain), the one client where the shell-env token model doesn't apply.
 
 ## Working on it
 

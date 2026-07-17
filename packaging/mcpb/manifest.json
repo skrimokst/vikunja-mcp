@@ -1,0 +1,35 @@
+{
+  "manifest_version": "0.3",
+  "name": "vikunja-mcp",
+  "display_name": "Vikunja MCP",
+  "version": "0.1.0",
+  "description": "MCP server for managing tasks in a Vikunja instance over its REST API (stdio; write-only, no delete).",
+  "author": { "name": "skrimokst" },
+  "server": {
+    "type": "binary",
+    "entry_point": "vikunja-mcp",
+    "mcp_config": {
+      "command": "vikunja-mcp",
+      "args": [],
+      "env": {
+        "VIKUNJA_URL": "${user_config.vikunja_url}",
+        "VIKUNJA_API_TOKEN": "${user_config.vikunja_api_token}"
+      }
+    }
+  },
+  "user_config": {
+    "vikunja_url": {
+      "type": "string",
+      "title": "Vikunja URL",
+      "description": "Base http(s) URL of your Vikunja instance, e.g. https://vikunja.example.com",
+      "required": true
+    },
+    "vikunja_api_token": {
+      "type": "string",
+      "title": "Vikunja API token",
+      "description": "Project-scoped service-account API token. Stored in the OS keychain, injected at launch.",
+      "required": true,
+      "sensitive": true
+    }
+  }
+}
