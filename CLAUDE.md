@@ -45,6 +45,12 @@ uv run python -c "import asyncio; from vikunja_mcp import server; print([t.name 
 - **Minimal token scope**: every call must work with a project-scoped token. Never add a code path
   that needs 'read all projects' (`GET /projects`) — the name→id lookup in `resolve_project_id` is
   the one grandfathered exception, which is why `VIKUNJA_PROJECT_ID` is preferred over the name.
+- **Descriptions are HTML, not markdown.** Vikunja's `description` field holds the HTML its WYSIWYG
+  editor produces — that is the storage format, and reads return it verbatim. Markdown is only ever
+  an *input* convenience: `to_vk_html` converts it on the way in, and nothing converts back on the
+  way out. So the tools are asymmetric by design (write markdown, read HTML) and the docstrings must
+  keep saying so. Re-converting HTML is a no-op (python-markdown passes block-level HTML through
+  untouched), which is what makes `update_task`'s read-modify-write safe — keep it that way.
 - **Write-only**: never add a delete tool.
 - **Python stays LF** (pinned in `.gitattributes`). Commit `uv.lock` for reproducible installs.
 

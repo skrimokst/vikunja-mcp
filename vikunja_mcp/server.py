@@ -31,7 +31,14 @@ a task id is global, and identifies the task on its own.
 
 When you MENTION a task to the user, name it by its `identifier` (the per-project ref the Vikunja UI
 shows, e.g. "HL-12") — that is the only number they can see. The global `id` is a tool handle: pass
-it as task_id, but keep it out of your prose. Fall back to the id only if identifier is empty."""
+it as task_id, but keep it out of your prose. Fall back to the id only if identifier is empty.
+
+Descriptions are HTML, not markdown. Vikunja's description field stores whatever its WYSIWYG editor
+produces, so get_task returns raw HTML (`<p>…</p>`) — never assume markdown on the way out. On the
+way IN, write markdown: add_task and update_task convert it to HTML for you, so do NOT hand-write
+HTML tags into description. When you show a description to the user, read the HTML and tell them what
+it says — do not quote the tags at them. Passing a description straight back from get_task into
+update_task is safe: HTML survives the converter unchanged, so read-modify-write will not mangle it."""
 
 mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
 
@@ -139,7 +146,11 @@ def list_tasks(project_id: int | None = None, include_done: bool = False) -> lis
 
 @mcp.tool()
 def get_task(task_id: int) -> dict:
-    """Get a single task by its global id, including its description (HTML).
+    """Get a single task by its global id, including its description.
+
+    `description` comes back as **HTML**, not markdown — that is how Vikunja stores it (its editor is
+    WYSIWYG). Summarize what it says rather than quoting the tags. To edit it, send markdown to
+    update_task; sending this HTML back unchanged is also safe.
 
     task_id is the `id` field, NOT the `index`/`identifier` shown in the UI. To act on a task the
     user named by its UI number (e.g. "HL-12"), list the project and match on identifier/index first,
@@ -162,8 +173,12 @@ def add_task(
     due: str | None = None,
     labels: list[str] | None = None,
 ) -> dict:
-    """Create a task. priority 0..5; due is yyyy-MM-dd; description is markdown; labels are
-    created if missing then attached. Returns the created task."""
+    """Create a task. priority 0..5; due is yyyy-MM-dd; labels are created if missing then attached.
+    Returns the created task.
+
+    Pass `description` as **markdown** — it is converted to HTML here, because Vikunja's description
+    field stores HTML. Do not hand-write HTML tags: you would be writing them into a markdown input.
+    Note that reads (get_task) hand that description back as HTML, not as the markdown you sent."""
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:
@@ -182,7 +197,11 @@ def update_task(
     labels: list[str] | None = None,
 ) -> dict:
     """Update a task; only the fields you pass change (read-modify-write). Pass due="" to clear
-    the due date, description="" to clear the description. Returns the updated task."""
+    the due date, description="" to clear the description. Returns the updated task.
+
+    Pass `description` as **markdown** — it is converted to HTML here, because Vikunja stores the
+    field as HTML. Handing back the HTML that get_task returned is safe (it survives the converter
+    unchanged), so you can read a description, tweak it, and write it back without mangling it."""
     cfg = load_config()
     _require_ready(cfg)
     changed: dict = {}

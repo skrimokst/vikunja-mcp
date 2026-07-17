@@ -93,13 +93,19 @@ tools themselves never need. Then "list my open Vikunja tasks".
 | --- | --- |
 | `check_connection(project_id?)` | readiness probe (token + project reachable, task read verified) |
 | `list_tasks(project_id?, include_done=false)` | open tasks (or all), sorted open→priority→id |
-| `get_task(task_id)` | one task, including its description |
+| `get_task(task_id)` | one task, including its description (returned as **HTML** — see below) |
 | `add_task(title, project_id?, description?, priority?, due?, labels?)` | create (priority 0..5; `due` = `yyyy-MM-dd`; `description` markdown; labels created-if-missing) |
 | `update_task(task_id, title?, description?, priority?, due?, labels?)` | change only the passed fields; `due=""`/`description=""` clear |
 | `complete_task(task_id)` / `reopen_task(task_id)` | mark done / not done |
 
 Tasks are returned as structured JSON (id, title, done, priority, due, labels). Priority is
 `0..5`: `0`=Unset `1`=Low `2`=Medium `3`=High `4`=Urgent `5`=DO NOW.
+
+**Descriptions: write markdown, read HTML.** Vikunja's description field stores the HTML its WYSIWYG
+editor produces — HTML *is* the storage format. `add_task`/`update_task` take markdown and convert it
+for you, but `get_task` returns Vikunja's HTML verbatim; nothing converts it back. The asymmetry is
+deliberate. Feeding a description from `get_task` straight into `update_task` is safe — HTML passes
+through the converter unchanged — so read-modify-write of a description won't mangle it.
 
 ---
 
