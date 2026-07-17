@@ -128,16 +128,79 @@ def test_add_task_builds_body_and_attaches_labels():
         if m == "PUT" and p == "/api/v1/tasks/42/labels":
             captured.setdefault("attached", []).append(body_of(req)["label_id"])
             return httpx.Response(200, json={})
+        if m == "GET" and p == "/api/v1/tasks/42":  # add_task re-reads once labels are attached
+            return httpx.Response(200, json={"id": 42, **captured["task"], "labels": [
+                {"id": i, "title": n} for i, n in zip(captured["attached"], ("docs", "release"))
+            ]})
         raise AssertionError(f"unexpected {m} {p}")
 
     c = make_client(handler)
     t = c.add_task(7, "Write the docs", description="**hi**", priority=4, due="2026-07-01", labels=["docs", "release"])
     assert t["id"] == 42
+    assert [lbl["title"] for lbl in t["labels"]] == ["docs", "release"]
     assert captured["task"]["title"] == "Write the docs"
     assert captured["task"]["priority"] == 4
     assert captured["task"]["due_date"] == "2026-07-01T00:00:00Z"
     assert "<strong>hi</strong>" in captured["task"]["description"]
     assert captured["attached"] == [1, 2]  # existing docs(1), then created release(2)
+
+
+def test_add_task_returns_the_labels_it_attached():
+    """Vikunja ignores labels on create, so the create response always shows none. add_task must
+    re-read, or it reports labels:[] for labels it successfully attached (the bug this guards)."""
+    def handler(req):
+        m, p = req.method, req.url.path
+        if m == "PUT" and p == "/api/v1/projects/7/tasks":
+            return httpx.Response(200, json={"id": 42, "title": "t"})  # note: no labels echoed
+        if m == "GET" and p == "/api/v1/labels":
+            return httpx.Response(200, json=[{"id": 1, "title": "docs"}])
+        if m == "PUT" and p == "/api/v1/tasks/42/labels":
+            return httpx.Response(200, json={})
+        if m == "GET" and p == "/api/v1/tasks/42":  # the re-read, post-attach
+            return httpx.Response(200, json={"id": 42, "title": "t", "labels": [{"id": 1, "title": "docs"}]})
+        raise AssertionError(f"unexpected {m} {p}")
+
+    t = make_client(handler).add_task(7, "t", labels=["docs"])
+    assert [lbl["title"] for lbl in t["labels"]] == ["docs"]
+
+
+def test_add_task_without_labels_does_not_re_read():
+    """The re-read costs a request; it must only happen when there were labels to attach."""
+    def handler(req):
+        m, p = req.method, req.url.path
+        if m == "PUT" and p == "/api/v1/projects/7/tasks":
+            return httpx.Response(200, json={"id": 42, "title": "t"})
+        raise AssertionError(f"unexpected extra request: {m} {p}")
+
+    assert make_client(handler).add_task(7, "t")["id"] == 42
+
+
+def test_attach_labels_swallows_duplicate_but_raises_real_failures():
+    """400 means 'already on the task' — benign. Anything else is a real failure and must surface."""
+    def handler_for(status, message):
+        def handler(req):
+            m, p = req.method, req.url.path
+            if m == "PUT" and p == "/api/v1/projects/7/tasks":
+                return httpx.Response(200, json={"id": 42, "title": "t"})
+            if m == "GET" and p == "/api/v1/labels":
+                return httpx.Response(200, json=[{"id": 1, "title": "docs"}])
+            if m == "PUT" and p == "/api/v1/tasks/42/labels":
+                return httpx.Response(status, json={"message": message})
+            if m == "GET" and p == "/api/v1/tasks/42":
+                return httpx.Response(200, json={"id": 42, "title": "t", "labels": []})
+            raise AssertionError(f"unexpected {m} {p}")
+        return handler
+
+    # duplicate -> swallowed, add_task still succeeds
+    c = make_client(handler_for(400, "This label already exists on the task."))
+    assert c.add_task(7, "t", labels=["docs"])["id"] == 42
+
+    # missing label / no scope -> must NOT be hidden
+    for status in (403, 404, 500):
+        c = make_client(handler_for(status, "nope"))
+        with pytest.raises(VikunjaError) as ei:
+            c.add_task(7, "t", labels=["docs"])
+        assert ei.value.status == status
 
 
 def test_update_is_read_modify_write_and_clears_due():

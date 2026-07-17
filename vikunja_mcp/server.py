@@ -173,12 +173,27 @@ def add_task(
     due: str | None = None,
     labels: list[str] | None = None,
 ) -> dict:
-    """Create a task. priority 0..5; due is yyyy-MM-dd; labels are created if missing then attached.
-    Returns the created task.
+    """Create a task in a Vikunja project. Returns the created task, labels included.
+
+    priority is 0..5 (0=Unset 1=Low 2=Medium 3=High 4=Urgent 5=DO NOW). due is `yyyy-MM-dd`.
+
+    `labels` are plain names, matched case-insensitively against existing labels and CREATED if
+    missing, then attached — so a typo silently makes a new label rather than failing. Vikunja
+    ignores labels on create, so they are attached in a second step and the task is re-read: the
+    labels you get back are what is really on the task. The task is created BEFORE the labels are
+    attached, so if label attachment errors the task still exists — do not retry the whole create,
+    or you will get a duplicate task; use update_task(labels=[...]) to finish the job.
 
     Pass `description` as **markdown** — it is converted to HTML here, because Vikunja's description
     field stores HTML. Do not hand-write HTML tags: you would be writing them into a markdown input.
-    Note that reads (get_task) hand that description back as HTML, not as the markdown you sent."""
+    Note that reads (get_task) hand that description back as HTML, not as the markdown you sent.
+
+    Description length: neither this server nor Vikunja imposes a practical limit (~1MB is fine).
+    The real ceiling is YOUR OWN output budget for one tool call — the description is text you have
+    to emit, and an over-long call is truncated before it ever reaches this server, so the failure
+    looks like the tool erroring rather than a task being rejected. Writing the text to a file first
+    does not help: that costs the same tokens. If you have a lot of material, summarize it and link
+    to the source rather than pasting it in wholesale."""
     cfg = load_config()
     _require_ready(cfg)
     with _client(cfg) as c:

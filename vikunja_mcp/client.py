@@ -173,8 +173,13 @@ class VikunjaClient:
             lid = self._resolve_label_id(name)
             try:
                 self._request("PUT", f"/tasks/{task_id}/labels", json={"label_id": lid})
-            except VikunjaError:
-                pass  # already attached -> ignore
+            except VikunjaError as e:
+                # 400 is Vikunja's "This label already exists on the task." — the one benign
+                # outcome, since attaching is idempotent from the caller's point of view.
+                # Everything else (403 missing label scope, 404, 5xx) is a REAL failure: let it
+                # out. Swallowing those made a broken attach look identical to a working one.
+                if e.status != 400:
+                    raise
 
     # --- tasks: write --------------------------------------------------------
     def add_task(
@@ -196,9 +201,14 @@ class VikunjaClient:
         due_rfc = to_vk_date(due)
         if due_rfc:
             body["due_date"] = due_rfc
+        # Vikunja IGNORES `labels` in the create body, so they must be attached afterwards —
+        # which means the create response predates them and always shows labels: []. Re-read
+        # once so the caller sees what is actually on the task.
         task = self._request("PUT", f"/projects/{project_id}/tasks", json=body)
         if labels:
-            self._attach_labels(int(task["id"]), labels)
+            tid = int(task["id"])
+            self._attach_labels(tid, labels)
+            task = self.get_task(tid)
         return task
 
     def update_task(
@@ -226,6 +236,7 @@ class VikunjaClient:
         result = self._request("POST", f"/tasks/{task_id}", json=task)
         if labels:
             self._attach_labels(task_id, labels)
+            result = self.get_task(task_id)  # same reason as add_task: the POST predates the attach
         return result
 
     def set_done(self, task_id: int, done: bool) -> dict:
