@@ -25,7 +25,8 @@ mcpb pack .                            # -> vikunja-mcp-<version>.mcpb
 
 **Always build with `mcpb pack`, never a hand-rolled zip.** `pack` validates the manifest against the
 schema the CLI ships before archiving, so a bad manifest fails loudly instead of installing broken.
-(An `.mcpb` *is* just a zip, but hand-zipping skips that check.)
+(An `.mcpb` *is* just a zip, but hand-zipping skips that check.) `.mcpbignore` keeps this directory's
+`README.md` / `.gitignore` out of the archive, so the bundle is just `manifest.json`.
 
 ## Install
 
