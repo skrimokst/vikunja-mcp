@@ -58,4 +58,11 @@ uv run python -c "import asyncio; from vikunja_mcp import server; print([t.name 
 
 - **Commit automatically** once a piece of work is complete — no need to ask. Do **not** add a
   `Co-Authored-By` / "Generated with Claude Code" trailer.
-- **Pushing and pulling are operator-only.**
+- **Anything that reaches the remote is operator-only** — not just push/pull, but `fetch`, `clone`,
+  `ls-remote`, and anything that contacts `origin` *indirectly*: `uvx --from git+ssh://…`,
+  `uv tool install` from a git URL, any command that clones behind your back. `origin` is SSH to a
+  self-hosted Gitea behind a **hardware key**, so every remote call demands a physical touch from
+  the operator — an agent cannot complete one, it can only interrupt them. A declined touch hangs
+  until timeout and leaves a 0-byte `.git/FETCH_HEAD`, which is *not* a real sync: `origin/main`
+  stays stale, so "ahead N" from `git status` can be measured against a ref that no longer matches
+  the remote. Ask; never initiate. Local git (status, log, diff, commit, rebase) is unrestricted.
