@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "vikunja-mcp",
   "display_name": "Vikunja MCP",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for managing tasks in a Vikunja instance over its REST API (stdio; write-only, no delete).",
   "author": { "name": "skrimokst" },
   "server": {

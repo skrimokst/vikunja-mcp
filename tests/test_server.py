@@ -32,15 +32,49 @@ def no_http(*args, **kwargs):
     raise AssertionError("no HTTP expected")
 
 
-def test_check_connection_without_any_project_asks_for_one(env, monkeypatch):
-    """Token and URL are fine, but there is nothing to probe: say so instead of reporting ready,
-    and do not touch the network."""
-    monkeypatch.setattr(server, "_client", no_http)
+def test_check_connection_without_project_lists_available_projects(env, monkeypatch):
+    """No project named: prove the token by listing projects and hand back the ids to choose from,
+    instead of demanding one up front."""
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def list_projects(self):
+            return [{"id": 11, "title": "Alpha"}, {"id": 7, "title": "Beta"}]
+
+    monkeypatch.setattr(server, "_client", lambda cfg: FakeClient())
+
+    out = server.check_connection()
+
+    assert out["ready"] is True
+    assert out["projects"] == [{"id": 11, "title": "Alpha"}, {"id": 7, "title": "Beta"}]
+    assert "project" not in out  # the singular key is only for the with-a-project path
+
+
+def test_check_connection_no_project_and_no_list_scope_points_at_project_id(env, monkeypatch):
+    """A token scoped to specific projects gets 403 on GET /projects — that is not a broken setup,
+    so say 'pass a project_id' rather than reporting the raw scope error."""
+    from vikunja_mcp.client import VikunjaError
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def list_projects(self):
+            raise VikunjaError("GET /projects -> HTTP 403 forbidden", status=403)
+
+    monkeypatch.setattr(server, "_client", lambda cfg: FakeClient())
 
     out = server.check_connection()
 
     assert out["ready"] is False
-    assert "no project_id was passed" in " ".join(out["issues"])
+    assert "pass a project_id" in " ".join(out["issues"])
 
 
 def test_check_connection_probes_the_project_id_passed(env, monkeypatch):
@@ -108,6 +142,25 @@ def test_token_help_flag_prints_command_and_does_not_start_server(capsys, monkey
     out = capsys.readouterr().out
     assert out.strip() == TOKEN_SETUP_HELP
     assert "PowerShell" in out and "VIKUNJA_API_TOKEN" in out
+
+
+def test_get_task_returns_description_as_markdown(env, monkeypatch):
+    """Vikunja stores the description as HTML; get_task converts it back so reads are markdown too."""
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def get_task(self, task_id):
+            return _raw(id=task_id, description="<p>hello <strong>world</strong></p>")
+
+    monkeypatch.setattr(server, "_client", lambda cfg: FakeClient())
+
+    out = server.get_task(281)
+
+    assert out["description"] == "hello **world**"
 
 
 # --- payload shaping --------------------------------------------------------

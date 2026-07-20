@@ -2,7 +2,8 @@
 
 Write-only by design: no delete. The quirks this handles, each forced by Vikunja's API:
 view-based paginated fetch, label create-then-attach, read-modify-write updates, date
-coercion, markdown->HTML descriptions.
+coercion, and description conversion (markdown->HTML on the way in, HTML->markdown on the
+way out) so callers see markdown in both directions even though Vikunja stores HTML.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Any
 
 import httpx
 import markdown as _markdown
+from markdownify import markdownify as _to_markdown
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _UNSET: Any = object()  # sentinel: "argument not provided" vs. an explicit "" (which clears)
@@ -39,6 +41,20 @@ def to_vk_html(md: str | None) -> str:
     if not md:
         return ""
     return _markdown.markdown(md, extensions=["fenced_code", "tables"])
+
+
+def from_vk_html(html: str | None) -> str:
+    """HTML (how Vikunja stores a description) -> markdown, for reads (empty stays empty).
+
+    The inverse of ``to_vk_html`` so callers read markdown and write markdown, even though the
+    stored format is the HTML Vikunja's WYSIWYG editor produces. ATX headings ("# h") to match
+    what ``to_vk_html`` emits. This is a display convenience only — nothing round-trips the result
+    back to storage unconverted, so lossy edges (a table, an editor checkbox) cost nothing beyond a
+    slightly rougher markdown rendering. ``update_task`` never re-reads through this: its
+    read-modify-write works on the raw stored HTML (see ``update_task``)."""
+    if not html:
+        return ""
+    return _to_markdown(html, heading_style="ATX").strip()
 
 
 def check_priority(priority: int | None) -> None:
@@ -96,6 +112,17 @@ class VikunjaClient:
         return r.json()
 
     # --- projects ------------------------------------------------------------
+    def list_projects(self) -> list[dict]:
+        """Return ``[{id, title}]`` for every project this token can see.
+
+        Needs the 'read all projects' scope — the SAME scope the name->id lookup in
+        ``resolve_project_id`` already relies on. The task tools never call this; it exists for
+        ``check_connection``'s no-project discovery path (prove the token + list what to pass as
+        project_id), so a token scoped only to specific projects still works everywhere else and
+        simply gets a 403 here, which ``check_connection`` turns into 'pass a project_id instead'."""
+        projects = self._request("GET", "/projects") or []
+        return [{"id": int(p["id"]), "title": str(p.get("title", ""))} for p in projects if p.get("id")]
+
     def resolve_project_id(self, project: int | str | None) -> int:
         """Return a numeric project id. An int is used directly (no /projects lookup, so the
         token needs no 'read all projects' scope); a name triggers the lookup."""

@@ -13,7 +13,8 @@ Vikunja from Claude.
 
 - `vikunja_mcp/config.py` — environment parsing; the API token is read from the process env only.
 - `vikunja_mcp/client.py` — `VikunjaClient`: the REST logic (view-based paginated fetch, label
-  create-then-attach, read-modify-write updates, date coercion, markdown→HTML descriptions).
+  create-then-attach, read-modify-write updates, date coercion, and description conversion —
+  `to_vk_html` markdown→HTML on the way in, `from_vk_html` HTML→markdown on the way out).
 - `vikunja_mcp/server.py` — FastMCP instance, the `@mcp.tool` definitions, `main()`.
 - `tests/` — no live server needed. `test_client.py` (pure functions + `httpx.MockTransport`),
   `test_config.py` (env parsing), `test_server.py` (tool layer + `_fmt_task` shaping).
@@ -43,19 +44,27 @@ uv run python -c "import asyncio; from vikunja_mcp import server; print([t.name 
   reads it from the process environment inherited from the shell that launched the MCP client.
 - **Config via env**: `VIKUNJA_URL` (required http(s) base URL), and an *optional* default project
   via `VIKUNJA_PROJECT_ID` (preferred) or `VIKUNJA_PROJECT`. Assume there is **no default** — one
-  machine often spans several projects — so every project-scoped tool (`check_connection`,
-  `list_tasks`, `add_task`) takes a `project_id` that overrides the default, and errors asking the
-  user to name a project when neither exists. The task-id tools (`get`/`update`/`complete`/`reopen`)
-  hit `/tasks/{id}`, which is global: they take no project, and must not grow one.
-- **Minimal token scope**: every call must work with a project-scoped token. Never add a code path
-  that needs 'read all projects' (`GET /projects`) — the name→id lookup in `resolve_project_id` is
-  the one grandfathered exception, which is why `VIKUNJA_PROJECT_ID` is preferred over the name.
-- **Descriptions are HTML, not markdown.** Vikunja's `description` field holds the HTML its WYSIWYG
-  editor produces — that is the storage format, and reads return it verbatim. Markdown is only ever
-  an *input* convenience: `to_vk_html` converts it on the way in, and nothing converts back on the
-  way out. So the tools are asymmetric by design (write markdown, read HTML) and the docstrings must
-  keep saying so. Re-converting HTML is a no-op (python-markdown passes block-level HTML through
-  untouched), which is what makes `update_task`'s read-modify-write safe — keep it that way.
+  machine often spans several projects — so `list_tasks` and `add_task` take a `project_id` that
+  overrides the default, and error asking the user to name a project when neither exists.
+  `check_connection`'s `project_id` is **optional**: with one it does a task read against it; with
+  none it lists the projects the token can see (see minimal-scope below). The task-id tools
+  (`get`/`update`/`complete`/`reopen`) hit `/tasks/{id}`, which is global: they take no project, and
+  must not grow one.
+- **Minimal token scope**: the *task* tools must all work with a project-scoped token. Never add a
+  code path in `list_tasks`/`add_task`/the task-id tools that needs 'read all projects'
+  (`GET /projects`). There are exactly **two** sanctioned uses of that scope, both outside the task
+  tools: the name→id lookup in `resolve_project_id` (why `VIKUNJA_PROJECT_ID` is preferred over the
+  name), and `check_connection`'s no-project discovery path (`list_projects`). Both degrade
+  gracefully — a token without the scope gets a 403 there and `check_connection` says "pass a
+  project_id instead", so the minimal-token setup still works everywhere that matters.
+- **Descriptions: markdown in BOTH directions.** Vikunja's `description` field stores the HTML its
+  WYSIWYG editor produces — that is the storage format — but the tools present markdown at the
+  boundary in both directions: `to_vk_html` converts markdown→HTML on writes, `from_vk_html`
+  converts the stored HTML→markdown on reads (`get_task`). The docstrings must keep saying "markdown
+  both ways". The back-conversion is a display convenience, so it may render exotic editor markup
+  (tables, checkboxes) as rough markdown — that is expected, not a bug. Keep `update_task`'s
+  read-modify-write on the **raw stored HTML** (it concatenates/replaces HTML directly and never
+  re-reads through `from_vk_html`), so appends stay exact regardless of read-side conversion.
 - **Write-only**: never add a delete tool.
 - **Python stays LF** (pinned in `.gitattributes`). Commit `uv.lock` for reproducible installs.
 

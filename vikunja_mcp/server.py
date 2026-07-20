@@ -12,7 +12,7 @@ import sys
 import truststore
 from mcp.server.fastmcp import FastMCP
 
-from .client import VikunjaClient, VikunjaError
+from .client import VikunjaClient, VikunjaError, from_vk_html
 from .config import TOKEN_SETUP_HELP, Config, config_issues, load_config
 
 INSTRUCTIONS = """Manage tasks in a Vikunja instance: list, get, add, update, complete, reopen.
@@ -23,22 +23,24 @@ must set it in the shell they launch Claude from, then relaunch. Relay the promp
 that error verbatim — never tell them to type the token inline, which would leak it to shell history.
 
 A default project is often deliberately NOT set, because one machine works across several projects.
-So check_connection, list_tasks and add_task all take a project_id, which overrides any default. If
-a tool says it needs a project, ASK the user which Vikunja project to use (prefer the numeric
-project id) and pass it as project_id — do not guess, and do not carry a project id over from an
-earlier, unrelated request. get_task, update_task, complete_task and reopen_task take no project:
-a task id is global, and identifies the task on its own.
+So list_tasks and add_task take a project_id, which overrides any default. If a tool says it needs a
+project, ASK the user which Vikunja project to use (prefer the numeric project id) and pass it as
+project_id — do not guess, and do not carry a project id over from an earlier, unrelated request.
+check_connection takes an OPTIONAL project_id: call it with no project to list the projects the token
+can see (a good way to discover which id to pass), or with one to verify a task read against it.
+get_task, update_task, complete_task and reopen_task take no project: a task id is global, and
+identifies the task on its own.
 
 When you MENTION a task to the user, name it by its `identifier` (the per-project ref the Vikunja UI
 shows, e.g. "HL-12") — that is the only number they can see. The global `id` is a tool handle: pass
 it as task_id, but keep it out of your prose. Fall back to the id only if identifier is empty.
 
-Descriptions are HTML, not markdown. Vikunja's description field stores whatever its WYSIWYG editor
-produces, so get_task returns raw HTML (`<p>…</p>`) — never assume markdown on the way out. On the
-way IN, write markdown: add_task and update_task convert it to HTML for you, so do NOT hand-write
-HTML tags into description. When you show a description to the user, read the HTML and tell them what
-it says — do not quote the tags at them. Passing a description straight back from get_task into
-update_task is safe: HTML survives the converter unchanged, so read-modify-write will not mangle it."""
+Descriptions are markdown in BOTH directions. You write markdown (add_task/update_task convert it to
+the HTML Vikunja stores) and you read markdown (get_task converts the stored HTML back). So do NOT
+hand-write HTML tags into a description, and do NOT expect tags out of get_task — just read and write
+markdown. Passing a description straight back from get_task into update_task is safe. The conversion
+back is a rendering convenience, so exotic editor markup (a table, a checkbox) may come out as
+slightly rough markdown — describe what it says, do not treat rough markdown as an error."""
 
 mcp = FastMCP("vikunja", instructions=INSTRUCTIONS)
 
@@ -148,42 +150,50 @@ def _fmt_task(t: dict) -> dict:
 
 @mcp.tool()
 def check_connection(project_id: int | None = None) -> dict:
-    """Verify the server can reach Vikunja and read a project.
+    """Verify the server can reach Vikunja with the configured URL + token.
 
-    project_id overrides the configured default, and is REQUIRED when no default is set — the
-    normal case when several projects are used on one machine. There is no project-less health
-    check by design: proving the token works means reading something, and every alternative route
-    (/projects, /tasks/all) would demand a token scope the task tools themselves never need.
+    project_id (which overrides any configured default) picks HOW the token is proven:
+      - WITH a project — task READ against it, using only project-scoped permissions. Prefer this;
+        it verifies exactly the scope list_tasks/add_task need.
+      - WITHOUT a project — lists the projects the token can see (GET /projects). This proves the
+        token AND returns the projects to choose from, so this is what to run when the user has not
+        named a project yet. It needs the 'read all projects' scope; a token scoped to specific
+        projects gets a 403 here, reported as 'pass a project_id instead' — not a failure of setup.
 
-    Returns {ready: true, ...} when a task READ succeeds, else {ready: false, issues: [...]}
-    with the specific fix (token/URL/project/scope). Run this first if anything seems off."""
+    Returns {ready: true, url, project|projects, ...} on success, else {ready: false, issues: [...]}
+    with the specific fix (token/URL/scope). Run this first if anything seems off."""
     cfg = load_config()
     issues = config_issues(cfg)
-    target = project_id if project_id else cfg.default_project
-    if not target:
-        issues.append(
-            "No project to check — none is configured (VIKUNJA_PROJECT_ID / VIKUNJA_PROJECT are "
-            "unset) and no project_id was passed. Ask the user which project to use — prefer the "
-            "numeric project id — then call check_connection again with project_id. Do not guess."
-        )
     if issues:
         return {"ready": False, "issues": issues}
+    target = project_id if project_id else cfg.default_project
     try:
         with _client(cfg) as c:
-            info = c.probe(target)
+            if target:
+                info = c.probe(target)
+                return {
+                    "ready": True,
+                    "url": cfg.base_url,
+                    "project": info["project_id"],
+                    "note": "task READ verified; WRITE scope (add/update/complete) is only exercised on an actual write.",
+                }
+            projects = c.list_projects()
+            return {
+                "ready": True,
+                "url": cfg.base_url,
+                "projects": projects,
+                "note": "token verified by listing projects; no default is configured, so pass one of "
+                "these ids as project_id to list_tasks/add_task.",
+            }
     except VikunjaError as e:
         hint = ""
         if e.status == 401:
             hint = " (token invalid or expired — reset VIKUNJA_API_TOKEN and relaunch)"
-        elif e.status == 403:
+        elif e.status == 403 and target:
             hint = " (token lacks scope for this route; with a project id you do NOT need 'read all projects')"
+        elif e.status == 403:
+            hint = " (token cannot 'read all projects' — pass a project_id to verify against one project instead)"
         return {"ready": False, "issues": [str(e) + hint]}
-    return {
-        "ready": True,
-        "url": cfg.base_url,
-        "project": info["project_id"],
-        "note": "task READ verified; WRITE scope (add/update/complete) is only exercised on an actual write.",
-    }
 
 
 @mcp.tool()
@@ -208,9 +218,10 @@ def list_tasks(project_id: int | None = None, include_done: bool = False) -> lis
 def get_task(task_id: int) -> dict:
     """Get a single task by its global id, including its description.
 
-    `description` comes back as **HTML**, not markdown — that is how Vikunja stores it (its editor is
-    WYSIWYG). Summarize what it says rather than quoting the tags. To edit it, send markdown to
-    update_task; sending this HTML back unchanged is also safe.
+    `description` comes back as **markdown**: Vikunja stores it as HTML (its editor is WYSIWYG) and
+    this converts it back for you, so writes and reads are both markdown. To edit it, send markdown
+    to update_task; sending this description straight back is safe. The back-conversion is a
+    rendering convenience — unusual editor markup (tables, checkboxes) may read as rough markdown.
 
     task_id is the `id` field, NOT the `index`/`identifier` shown in the UI. To act on a task the
     user named by its UI number (e.g. "HL-12"), list the project and match on identifier/index first,
@@ -232,7 +243,7 @@ def get_task(task_id: int) -> dict:
     with _client(cfg) as c:
         t = c.get_task(task_id)
     out = _fmt_task(t)
-    out["description"] = t.get("description") or ""
+    out["description"] = from_vk_html(t.get("description"))
     return out
 
 
@@ -256,9 +267,9 @@ def add_task(
     attached, so if label attachment errors the task still exists — do not retry the whole create,
     or you will get a duplicate task; use update_task(labels=[...]) to finish the job.
 
-    Pass `description` as **markdown** — it is converted to HTML here, because Vikunja's description
-    field stores HTML. Do not hand-write HTML tags: you would be writing them into a markdown input.
-    Note that reads (get_task) hand that description back as HTML, not as the markdown you sent.
+    Pass `description` as **markdown** — it is converted to the HTML Vikunja's description field
+    stores. Do not hand-write HTML tags: you would be writing them into a markdown input. Reads
+    (get_task) convert the stored HTML back to markdown, so descriptions are markdown both ways.
 
     Description length: neither this server nor Vikunja imposes a practical limit (~1MB is fine).
     The real ceiling is YOUR OWN output budget for one tool call — the description is text you have
@@ -287,9 +298,9 @@ def update_task(
     """Update a task; only the fields you pass change (read-modify-write). Pass due="" to clear
     the due date, description="" to clear the description. Returns the updated task.
 
-    Pass `description` as **markdown** — it is converted to HTML here, because Vikunja stores the
-    field as HTML. Handing back the HTML that get_task returned is safe (it survives the converter
-    unchanged), so you can read a description, tweak it, and write it back without mangling it.
+    Pass `description` as **markdown** — it is converted to the HTML Vikunja stores. Handing back
+    the markdown that get_task returned is safe (it just converts to HTML again), so you can read a
+    description, tweak it, and write it back. Descriptions are markdown in both directions.
 
     `description_append` adds markdown to the END of the description instead of replacing it, and
     is how you write a description too long to fit in one tool call: send the first part via

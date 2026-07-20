@@ -14,6 +14,7 @@ from vikunja_mcp.client import (
     VikunjaClient,
     VikunjaError,
     check_priority,
+    from_vk_html,
     to_vk_date,
     to_vk_html,
 )
@@ -33,6 +34,20 @@ def test_to_vk_html():
     assert to_vk_html(None) == ""
 
 
+def test_from_vk_html():
+    """The read-side inverse: Vikunja's stored HTML back to markdown, empties preserved."""
+    assert from_vk_html("<p>hello <strong>world</strong></p>") == "hello **world**"
+    assert from_vk_html("<h1>Title</h1>") == "# Title"  # ATX heading, matches to_vk_html's input
+    assert from_vk_html("") == ""
+    assert from_vk_html(None) == ""
+
+
+def test_description_markdown_round_trips_through_storage():
+    """What add_task/update_task store (to_vk_html) is what get_task hands back (from_vk_html),
+    for the common prose/emphasis case — so a caller can read, tweak, and write markdown."""
+    assert from_vk_html(to_vk_html("hello **world**")) == "hello **world**"
+
+
 def test_check_priority():
     for ok in (None, 0, 3, 5):
         check_priority(ok)
@@ -48,6 +63,28 @@ def make_client(handler):
 
 def body_of(request: httpx.Request) -> dict:
     return json.loads(request.content)
+
+
+# --- project listing --------------------------------------------------------
+def test_list_projects_returns_id_title_pairs():
+    def handler(req):
+        assert req.url.path == "/api/v1/projects"
+        return httpx.Response(200, json=[
+            {"id": 11, "title": "Alpha", "description": "noise"},
+            {"id": 7, "title": "Beta"},
+            {"id": 0, "title": "pseudo -1 (falsy id, dropped)"},
+        ])
+
+    assert make_client(handler).list_projects() == [{"id": 11, "title": "Alpha"}, {"id": 7, "title": "Beta"}]
+
+
+def test_list_projects_403_surfaces_for_check_connection_to_handle():
+    def handler(req):
+        return httpx.Response(403, json={"message": "forbidden"})
+
+    with pytest.raises(VikunjaError) as ei:
+        make_client(handler).list_projects()
+    assert ei.value.status == 403
 
 
 # --- project resolution -----------------------------------------------------

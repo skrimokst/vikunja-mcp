@@ -163,20 +163,22 @@ Claude **Desktop** (and **cowork** in *local* mode, which shares Desktop's confi
 
 ## Verify
 
-Ask Claude to run `check_connection` — it returns `{ ready: true, url, project, ... }` once a task
-**read** succeeds, or `{ ready: false, issues: [...] }` with the specific cause (token / URL /
-project / 401 bad-token / 403 missing-scope). With no default project configured, name one
-("check the Vikunja connection for project 7") — proving the token works means reading something,
-and the project-less alternatives (`/projects`, `/tasks/all`) would demand a token scope the task
-tools themselves never need. Then "list my open Vikunja tasks".
+Ask Claude to run `check_connection`. Name a project ("check the Vikunja connection for project 7")
+and it returns `{ ready: true, url, project, ... }` once a task **read** succeeds — this verifies
+exactly the scope `list_tasks`/`add_task` need, using only project-scoped permissions. Run it with
+**no** project and it returns `{ ready: true, url, projects: [...] }`, listing the projects the token
+can see — handy for discovering which id to pass. That no-project path uses `GET /projects`, so a
+token scoped to specific projects gets a `403` there and the result says to pass a `project_id`
+instead (not a broken setup). Either way, `{ ready: false, issues: [...] }` names the specific cause
+(token / URL / 401 bad-token / 403 missing-scope). Then "list my open Vikunja tasks".
 
 ## Tools
 
 | Tool | Does |
 | --- | --- |
-| `check_connection(project_id?)` | readiness probe (token + project reachable, task read verified) |
+| `check_connection(project_id?)` | readiness probe. With a project: verifies a task read. Without: lists the projects the token can see (see below) |
 | `list_tasks(project_id?, include_done=false)` | open tasks (or all), sorted open→priority→id |
-| `get_task(task_id)` | one task, including its description (returned as **HTML** — see below) |
+| `get_task(task_id)` | one task, including its description (returned as **markdown** — see below) |
 | `add_task(title, project_id?, description?, priority?, due?, labels?)` | create (priority 0..5; `due` = `yyyy-MM-dd`; `description` markdown; labels created-if-missing) |
 | `update_task(task_id, title?, description?, description_append?, priority?, due?, labels?)` | change only the passed fields; `due=""`/`description=""` clear; `description_append` grows the description (see below) |
 | `complete_task(task_id)` / `reopen_task(task_id)` | mark done / not done |
@@ -196,7 +198,7 @@ Tasks come back as structured JSON. Priority is `0..5`: `0`=Unset `1`=Low `2`=Me
 | `related_tasks` | `{kind: [{id, identifier, title, done}]}` — references only |
 | `reminders` | `[{reminder, relative_to, relative_period}]` |
 | `repeat_after`, `repeat_mode` | seconds; `0` = does not repeat |
-| `description` | `get_task` only — HTML, see above |
+| `description` | `get_task` only — markdown (converted from Vikunja's stored HTML), see above |
 
 Everything above rides in the payload Vikunja already sends, so none of it costs an extra request.
 `bucket_id`, `position`, `cover_image_attachment_id` and `reactions` are dropped: kanban/UI state
@@ -210,11 +212,14 @@ handle nothing here can resolve. `related_tasks` is trimmed to references on pur
 the *entire* related task, description included, which would put a task's whole body inside every
 task linking to it.
 
-**Descriptions: write markdown, read HTML.** Vikunja's description field stores the HTML its WYSIWYG
-editor produces — HTML *is* the storage format. `add_task`/`update_task` take markdown and convert it
-for you, but `get_task` returns Vikunja's HTML verbatim; nothing converts it back. The asymmetry is
-deliberate. Feeding a description from `get_task` straight into `update_task` is safe — HTML passes
-through the converter unchanged — so read-modify-write of a description won't mangle it.
+**Descriptions: markdown both ways.** Vikunja's description field stores the HTML its WYSIWYG editor
+produces — HTML *is* the storage format — but the tools present markdown at both ends.
+`add_task`/`update_task` take markdown and convert it to HTML on the way in; `get_task` converts the
+stored HTML back to markdown on the way out. So you read and write the same format. Feeding a
+description from `get_task` straight into `update_task` is safe (it just converts back to HTML). The
+read-side conversion is a rendering convenience, so unusual editor markup (tables, checkboxes) can
+come back as slightly rough markdown — expected, not a failure. Note `description_append` still
+concatenates on the **stored HTML** internally, so it stays exact no matter how reads render.
 
 **Long descriptions: `description_append`.** Neither this server nor Vikunja limits description
 length in practice (~1MB round-trips fine). The real ceiling is the *calling agent's* output budget
