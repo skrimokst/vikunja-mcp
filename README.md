@@ -51,6 +51,15 @@ uv tool install git+ssh://git@your-git-host/you/vikunja-mcp.git
 uv tool upgrade vikunja-mcp                                        # update later (re-fetches the remote)
 ```
 
+Two things to get right when installing/upgrading from the remote:
+
+- **Push first.** The build uses the remote's *committed* state, so `git push` your work before you
+  install or upgrade — a run before the push silently builds the *previous* version, not your latest.
+- **Release the launcher first.** Before a reinstall/upgrade, make sure nothing is still running the
+  server — **quit Claude Desktop** especially, since it keeps the `vikunja-mcp` executable open. A
+  running launcher can't be overwritten, and a half-finished reinstall can leave the tool environment
+  broken (recover by quitting the holders and re-running the install).
+
 …or from a wheel you build yourself, if you'd rather not reach the remote to install or update:
 
 ```bash
